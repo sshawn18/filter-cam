@@ -14,6 +14,21 @@ import org.junit.Test
 import java.io.File
 import java.io.IOException
 
+/**
+ * Golden test for the Jade filter.
+ *
+ * The golden `app/src/androidTest/assets/jade_golden.png` is generated from the real
+ * `assets/filters/jade.json`. Re-record it after ANY change to jade.json or the shader
+ * (Shaders.kt) with:
+ *
+ *     .\gradlew.bat connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.record=true"
+ *     adb pull /sdcard/Android/data/com.filtercam/files/jade_golden.png app\src\androidTest\assets\jade_golden.png
+ *
+ * Until the golden is recorded, the comparison is skipped, not passed.
+ *
+ * A sanity check runs in both modes: the output must differ noticeably from the input, so a
+ * pass-through shader can never be recorded as the golden or pass the comparison.
+ */
 class PhotoProcessorGoldenTest {
     private fun testInput(): Bitmap {
         val b = Bitmap.createBitmap(300, 400, Bitmap.Config.ARGB_8888)
@@ -29,10 +44,25 @@ class PhotoProcessorGoldenTest {
         return b
     }
 
+    /** Mean absolute RGB difference per channel value. Both bitmaps must be the same size. */
+    private fun meanAbsDiff(a: Bitmap, b: Bitmap): Double {
+        var sum = 0L
+        for (y in 0 until a.height) for (x in 0 until a.width) {
+            val pa = a.getPixel(x, y); val pb = b.getPixel(x, y)
+            sum += Math.abs(Color.red(pa) - Color.red(pb)) + Math.abs(Color.green(pa) - Color.green(pb)) + Math.abs(Color.blue(pa) - Color.blue(pb))
+        }
+        return sum / (a.width * a.height * 3.0)
+    }
+
     @Test fun jadeMatchesGolden() {
         val inst = InstrumentationRegistry.getInstrumentation()
         val json = inst.targetContext.assets.open("filters/jade.json").bufferedReader().use { it.readText() }
-        val out = PhotoProcessor().process(testInput(), FilterParams.fromJson(json), 1f)
+        val input = testInput()
+        val out = PhotoProcessor().process(input, FilterParams.fromJson(json), 1f)
+
+        // Runs in both modes, before recording or comparing.
+        val d = meanAbsDiff(out, input)
+        assertTrue("shader output is (nearly) identical to the input: diff=$d", d > 5.0)
 
         if (InstrumentationRegistry.getArguments().getString("record") == "true") {
             val f = File(inst.targetContext.getExternalFilesDir(null), "jade_golden.png")
@@ -47,12 +77,7 @@ class PhotoProcessorGoldenTest {
         }
         Assume.assumeTrue("jade_golden.png not recorded yet (record with -e record true, see plan Task 8)", goldenExists)
         val golden = BitmapFactory.decodeStream(inst.context.assets.open("jade_golden.png"))
-        var sum = 0L
-        for (y in 0 until out.height) for (x in 0 until out.width) {
-            val a = out.getPixel(x, y); val g = golden.getPixel(x, y)
-            sum += Math.abs(Color.red(a) - Color.red(g)) + Math.abs(Color.green(a) - Color.green(g)) + Math.abs(Color.blue(a) - Color.blue(g))
-        }
-        val meanAbsDiff = sum / (out.width * out.height * 3.0)
-        assertTrue("mean abs diff $meanAbsDiff > 2.0", meanAbsDiff <= 2.0)
+        val meanDiff = meanAbsDiff(out, golden)
+        assertTrue("mean abs diff $meanDiff > 2.0", meanDiff <= 2.0)
     }
 }
