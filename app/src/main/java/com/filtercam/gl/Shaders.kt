@@ -15,6 +15,7 @@ void main() {
 
     const val FRAGMENT = """
 precision highp float;
+precision highp int;
 in vec2 vUv;
 in vec2 vScreen;
 out vec4 fragColor;

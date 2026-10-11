@@ -22,6 +22,7 @@ class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
     /** Invoked on the main thread after the GL context was recreated (not on first creation). */
     @Volatile var onSurfaceRecreated: (() -> Unit)? = null
     private var created = false
+    @Volatile private var shaderInitFailed = false
 
     private var program: FilterProgram? = null
     private var oesTex = 0
@@ -39,12 +40,14 @@ class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
     }
 
     private fun fulfil() {
-        val req = synchronized(this) { pending.also { pending = null } } ?: return
         val tex = surfaceTexture
         if (program == null || tex == null) {
-            req.willNotProvideSurface()
+            if (shaderInitFailed) {
+                synchronized(this) { pending.also { pending = null } }?.willNotProvideSurface()
+            }
             return
         }
+        val req = synchronized(this) { pending.also { pending = null } } ?: return
         tex.setDefaultBufferSize(req.resolution.width, req.resolution.height)
         val surface = Surface(tex)
         val executor = ContextCompat.getMainExecutor(context)
@@ -62,12 +65,14 @@ class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
     }
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+        shaderInitFailed = false
         val recreated = created
         created = true
         release()
         try {
             program = FilterProgram(oes = true)
         } catch (e: Exception) {
+            shaderInitFailed = true
             android.util.Log.e("FilterCam", "shader init failed", e)
             Handler(Looper.getMainLooper()).post {
                 android.widget.Toast.makeText(context, "Filters unsupported on this device: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
