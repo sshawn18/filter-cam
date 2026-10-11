@@ -1,0 +1,7 @@
+.gradle/
+build/
+local.properties
+scripts/env.ps1
+*.iml
+.idea/
+.superpowers/
