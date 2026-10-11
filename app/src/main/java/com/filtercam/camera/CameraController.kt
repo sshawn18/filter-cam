@@ -14,6 +14,7 @@ import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import java.util.concurrent.Executors
 
 class CameraController(private val context: Context) {
     private val selector = ResolutionSelector.Builder()
@@ -23,6 +24,8 @@ class CameraController(private val context: Context) {
         .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
         .setResolutionSelector(selector)
         .build()
+
+    private val captureExecutor = Executors.newSingleThreadExecutor()
 
     fun bind(owner: LifecycleOwner, provider: Preview.SurfaceProvider, front: Boolean) {
         val future = ProcessCameraProvider.getInstance(context)
@@ -39,9 +42,10 @@ class CameraController(private val context: Context) {
         }, ContextCompat.getMainExecutor(context))
     }
 
+    /** [onResult] is invoked on a background thread, not the main thread. */
     fun capture(onResult: (Result<Bitmap>) -> Unit) {
         imageCapture.takePicture(
-            ContextCompat.getMainExecutor(context),
+            captureExecutor,
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
                     val result = runCatching {

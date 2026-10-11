@@ -6,6 +6,8 @@ import android.opengl.GLES11Ext
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
 import android.opengl.Matrix
+import android.os.Handler
+import android.os.Looper
 import android.view.Surface
 import androidx.camera.core.Preview
 import androidx.camera.core.SurfaceRequest
@@ -19,6 +21,9 @@ class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
     @Volatile var strength = 1f
     @Volatile var mirror = false
     lateinit var glView: GLSurfaceView
+    /** Invoked on the main thread after the GL context was recreated (not on first creation). */
+    @Volatile var onSurfaceRecreated: (() -> Unit)? = null
+    private var created = false
 
     private var program: FilterProgram? = null
     private var oesTex = 0
@@ -47,7 +52,20 @@ class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
         req.provideSurface(surface, executor) { surface.release() }
     }
 
+    /** Releases GL resources. Call on the GL thread only. */
+    fun release() {
+        surfaceTexture?.release()
+        surfaceTexture = null
+        if (oesTex != 0) GLES30.glDeleteTextures(1, intArrayOf(oesTex), 0)
+        oesTex = 0
+        program?.release()
+        program = null
+    }
+
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+        val recreated = created
+        created = true
+        release()
         program = FilterProgram(oes = true)
         val ids = IntArray(1)
         GLES30.glGenTextures(1, ids, 0)
@@ -59,6 +77,7 @@ class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
         GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
         surfaceTexture = SurfaceTexture(oesTex).also { it.setOnFrameAvailableListener { glView.requestRender() } }
         fulfil()
+        if (recreated) onSurfaceRecreated?.let { cb -> Handler(Looper.getMainLooper()).post { cb() } }
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
