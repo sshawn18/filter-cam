@@ -1,0 +1,18 @@
+{
+  "name": "Jade",
+  "exposure": -0.15,
+  "temperature": 0.0,
+  "tint": -0.25,
+  "contrast": 1.12,
+  "blackLift": 0.05,
+  "shadowColor": [0.02, 0.20, 0.15],
+  "shadowAmount": 0.6,
+  "highlightColor": [0.80, 0.92, 0.88],
+  "highlightAmount": 0.25,
+  "saturation": 0.92,
+  "greenDeepen": 0.7,
+  "skinProtect": 0.8,
+  "halation": 0.35,
+  "grain": 0.5,
+  "vignette": 0.55
+}
