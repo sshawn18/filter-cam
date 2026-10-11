@@ -66,7 +66,14 @@ class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
         val recreated = created
         created = true
         release()
-        program = FilterProgram(oes = true)
+        try {
+            program = FilterProgram(oes = true)
+        } catch (e: Exception) {
+            Handler(Looper.getMainLooper()).post {
+                android.widget.Toast.makeText(context, "Filters unsupported on this device: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+            }
+            return
+        }
         val ids = IntArray(1)
         GLES30.glGenTextures(1, ids, 0)
         oesTex = ids[0]
