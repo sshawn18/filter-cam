@@ -65,6 +65,6 @@ Gallery query/delete failures -> snackbar. Existing capture/save failure toasts 
 - Existing tests (`FilterParamsTest`, golden test) must keep passing.
 
 ## Build/tooling
-Same toolchain as the original spec. New dependencies are limited to: `androidx.compose.material:material-icons-core`
+Same toolchain as the original spec. New dependencies are limited to: `androidx.compose.material:material-icons-extended`
 (icons) and `androidx.activity:activity-compose` (already present); no image-loading library is added (gallery thumbnails
 decoded with `ContentResolver.loadThumbnail`).
