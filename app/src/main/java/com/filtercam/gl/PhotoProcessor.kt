@@ -18,6 +18,9 @@ class PhotoProcessor {
         val dpy: EGLDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
         val ver = IntArray(2)
         check(EGL14.eglInitialize(dpy, ver, 0, ver, 1)) { "eglInitialize failed" }
+        var ctx: EGLContext = EGL14.EGL_NO_CONTEXT
+        var surf: EGLSurface = EGL14.EGL_NO_SURFACE
+        try {
         val cfgAttr = intArrayOf(
             EGL14.EGL_RENDERABLE_TYPE, 0x40 /* EGL_OPENGL_ES3_BIT_KHR */,
             EGL14.EGL_SURFACE_TYPE, EGL14.EGL_PBUFFER_BIT,
@@ -27,12 +30,11 @@ class PhotoProcessor {
         val cfgs = arrayOfNulls<EGLConfig>(1)
         val n = IntArray(1)
         check(EGL14.eglChooseConfig(dpy, cfgAttr, 0, cfgs, 0, 1, n, 0) && n[0] > 0) { "no EGL config" }
-        val ctx: EGLContext = EGL14.eglCreateContext(dpy, cfgs[0], EGL14.EGL_NO_CONTEXT,
+        ctx = EGL14.eglCreateContext(dpy, cfgs[0], EGL14.EGL_NO_CONTEXT,
             intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 3, EGL14.EGL_NONE), 0)
-        val surf: EGLSurface = EGL14.eglCreatePbufferSurface(dpy, cfgs[0],
+        surf = EGL14.eglCreatePbufferSurface(dpy, cfgs[0],
             intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE), 0)
         check(EGL14.eglMakeCurrent(dpy, surf, surf, ctx)) { "eglMakeCurrent failed" }
-        try {
             val w = src.width
             val h = src.height
             val ids = IntArray(2)
@@ -69,9 +71,8 @@ class PhotoProcessor {
             return out
         } finally {
             EGL14.eglMakeCurrent(dpy, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
-            EGL14.eglDestroySurface(dpy, surf)
-            EGL14.eglDestroyContext(dpy, ctx)
-            EGL14.eglTerminate(dpy)
+            if (surf != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(dpy, surf)
+            if (ctx != EGL14.EGL_NO_CONTEXT) EGL14.eglDestroyContext(dpy, ctx)
         }
     }
 }

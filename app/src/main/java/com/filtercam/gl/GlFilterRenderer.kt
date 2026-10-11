@@ -5,7 +5,6 @@ import android.graphics.SurfaceTexture
 import android.opengl.GLES11Ext
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
-import android.opengl.Matrix
 import android.os.Handler
 import android.os.Looper
 import android.view.Surface
@@ -19,7 +18,6 @@ import javax.microedition.khronos.opengles.GL10
 class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
     @Volatile var params = FilterParams(name = "none")
     @Volatile var strength = 1f
-    @Volatile var mirror = false
     lateinit var glView: GLSurfaceView
     /** Invoked on the main thread after the GL context was recreated (not on first creation). */
     @Volatile var onSurfaceRecreated: (() -> Unit)? = null
@@ -29,10 +27,8 @@ class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
     private var oesTex = 0
     private var surfaceTexture: SurfaceTexture? = null
     private var pending: SurfaceRequest? = null
-    @Volatile private var rotation = 0
     private var aspect = 3f / 4f
     private val st = FloatArray(16)
-    private val rot = FloatArray(16)
     private val texMatrix = FloatArray(16)
     private val t0 = System.nanoTime()
 
@@ -43,12 +39,15 @@ class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
     }
 
     private fun fulfil() {
-        val tex = surfaceTexture ?: return
         val req = synchronized(this) { pending.also { pending = null } } ?: return
+        val tex = surfaceTexture
+        if (program == null || tex == null) {
+            req.willNotProvideSurface()
+            return
+        }
         tex.setDefaultBufferSize(req.resolution.width, req.resolution.height)
         val surface = Surface(tex)
         val executor = ContextCompat.getMainExecutor(context)
-        req.setTransformationInfoListener(executor) { rotation = it.rotationDegrees }
         req.provideSurface(surface, executor) { surface.release() }
     }
 
@@ -69,6 +68,7 @@ class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
         try {
             program = FilterProgram(oes = true)
         } catch (e: Exception) {
+            android.util.Log.e("FilterCam", "shader init failed", e)
             Handler(Looper.getMainLooper()).post {
                 android.widget.Toast.makeText(context, "Filters unsupported on this device: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
             }
@@ -96,12 +96,8 @@ class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
         val tex = surfaceTexture ?: return
         tex.updateTexImage()
         tex.getTransformMatrix(st)
-        Matrix.setIdentityM(rot, 0)
-        Matrix.translateM(rot, 0, 0.5f, 0.5f, 0f)
-        Matrix.rotateM(rot, 0, -rotation.toFloat(), 0f, 0f, 1f)
-        if (mirror) Matrix.scaleM(rot, 0, -1f, 1f, 1f)
-        Matrix.translateM(rot, 0, -0.5f, -0.5f, 0f)
-        Matrix.multiplyMM(texMatrix, 0, st, 0, rot, 0)
+        // st already contains the camera transform (sensor rotation + front mirror) for this portrait-locked activity; verify on device
+        System.arraycopy(st, 0, texMatrix, 0, 16)
         val time = ((System.nanoTime() - t0) / 1_000_000L % 100_000L) / 1000f
         program?.draw(oesTex, texMatrix, params, strength, time, aspect)
     }

@@ -53,13 +53,13 @@ fun CameraScreen(vm: FilterViewModel) {
     val strength by vm.strength.collectAsState()
     var front by remember { mutableStateOf(false) }
     var dev by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
     var glView by remember { mutableStateOf<GLSurfaceView?>(null) }
     val renderer = remember { GlFilterRenderer(ctx) }
     val controller = remember { CameraController(ctx) }
 
     renderer.params = params
     renderer.strength = strength
-    renderer.mirror = front
     SideEffect {
         renderer.onSurfaceRecreated = { controller.bind(owner, renderer.surfaceProvider, front) }
     }
@@ -103,15 +103,31 @@ fun CameraScreen(vm: FilterViewModel) {
             Text("Flip", color = Color.White, modifier = Modifier.clickable { front = !front })
             Box(Modifier.size(72.dp).clip(CircleShape).background(Color.White).clickable {
                 // Capture params/strength on the main thread; onResult runs on a background thread.
+                if (busy) return@clickable
+                busy = true
                 val p = params; val s = strength
+                val main = android.os.Handler(android.os.Looper.getMainLooper())
                 controller.capture { result ->
                     result.onSuccess { bmp ->
                         worker.execute {
-                            runCatching { PhotoSaver.save(ctx, PhotoProcessor().process(bmp, p, s)) }
-                                .onSuccess { toast(ctx, "Saved to Pictures/FilterCam") }
-                                .onFailure { toast(ctx, "Save failed: ${it.message}") }
+                            var out: android.graphics.Bitmap? = null
+                            try {
+                                runCatching {
+                                    out = PhotoProcessor().process(bmp, p, s)
+                                    PhotoSaver.save(ctx, out!!)
+                                }
+                                    .onSuccess { toast(ctx, "Saved to Pictures/FilterCam") }
+                                    .onFailure { toast(ctx, "Save failed: ${it.message}") }
+                            } finally {
+                                out?.recycle()
+                                bmp.recycle()
+                                main.post { busy = false }
+                            }
                         }
-                    }.onFailure { toast(ctx, "Capture failed: ${it.message}") }
+                    }.onFailure {
+                        toast(ctx, "Capture failed: ${it.message}")
+                        main.post { busy = false }
+                    }
                 }
             })
             Text(if (dev) "Dev ✓" else "Dev", color = Color.White, modifier = Modifier.clickable { dev = !dev })

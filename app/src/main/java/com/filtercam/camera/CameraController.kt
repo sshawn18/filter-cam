@@ -11,6 +11,8 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
+import android.util.Size
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
@@ -20,9 +22,13 @@ class CameraController(private val context: Context) {
     private val selector = ResolutionSelector.Builder()
         .setAspectRatioStrategy(AspectRatioStrategy(AspectRatio.RATIO_4_3, AspectRatioStrategy.FALLBACK_RULE_AUTO))
         .build()
+    private val captureSelector = ResolutionSelector.Builder()
+        .setAspectRatioStrategy(AspectRatioStrategy(AspectRatio.RATIO_4_3, AspectRatioStrategy.FALLBACK_RULE_AUTO))
+        .setResolutionStrategy(ResolutionStrategy(Size(4032, 3024), ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER))
+        .build()
     private val imageCapture = ImageCapture.Builder()
         .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-        .setResolutionSelector(selector)
+        .setResolutionSelector(captureSelector)
         .build()
 
     private val captureExecutor = Executors.newSingleThreadExecutor()
@@ -51,7 +57,9 @@ class CameraController(private val context: Context) {
                     val result = runCatching {
                         val raw = image.toBitmap()
                         val m = Matrix().apply { postRotate(image.imageInfo.rotationDegrees.toFloat()) }
-                        Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, m, true)
+                        val rotated = Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, m, true)
+                        if (rotated !== raw) raw.recycle()
+                        rotated
                     }
                     image.close()
                     onResult(result)

@@ -45,7 +45,14 @@ vec3 hsv2rgb(vec3 c) {
     vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
     return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
 }
-float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+float hash(vec2 p) {
+    uvec2 q = uvec2(ivec2(floor(p)));
+    uint h = q.x * 1597334677u ^ q.y * 3812015801u;
+    h = (h ^ (h >> 16u)) * 2246822519u;
+    h = (h ^ (h >> 13u)) * 3266489917u;
+    h = h ^ (h >> 16u);
+    return float(h) * (1.0 / 4294967295.0);
+}
 
 void main() {
     vec3 orig = texture(uTex, vUv).rgb;
@@ -75,8 +82,9 @@ void main() {
     c = hsv2rgb(vec3(fract(g.x), clamp(g.y, 0.0, 1.0), clamp(g.z, 0.0, 1.0)));
 
     // 4. contrast, lifted tinted blacks, split toning
-    c = (c - 0.5) * uContrast + 0.5;
-    c = c * (1.0 - uBlackLift) + uBlackLift * uShadowColor;
+    c = clamp((c - 0.5) * uContrast + 0.5, 0.0, 1.0);
+    vec3 liftCol = uShadowColor / max(max(uShadowColor.r, uShadowColor.g), max(uShadowColor.b, 1.0e-3));
+    c = c * (1.0 - uBlackLift) + uBlackLift * liftCol;
     float l = dot(c, LUMA);
     float sw = 1.0 - smoothstep(0.0, 0.55, l);
     float hw = smoothstep(0.45, 1.0, l);
@@ -100,7 +108,7 @@ void main() {
     c += (glow / 8.0) * uHalation * 3.0 * vec3(0.9, 1.0, 0.8);
 
     // 8. grain (midtone weighted), vignette
-    float n = hash(vScreen * vec2(uAspect, 1.0) * 1400.0 + uTime) - 0.5;
+    float n = hash(floor(vScreen * vec2(uAspect, 1.0) * 1440.0) + floor(uTime * 24.0)) - 0.5;
     c += n * uGrain * 0.14 * (1.0 - abs(l * 2.0 - 1.0) * 0.5);
     float d = length((vScreen - 0.5) * vec2(uAspect, 1.0));
     c *= 1.0 - uVignette * smoothstep(0.25, 0.85, d);

@@ -18,8 +18,13 @@ object PhotoSaver {
         }
         val resolver = context.contentResolver
         val uri = checkNotNull(resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)) { "MediaStore insert failed" }
-        resolver.openOutputStream(uri).use { out ->
-            check(bitmap.compress(Bitmap.CompressFormat.JPEG, 95, checkNotNull(out))) { "JPEG compress failed" }
+        try {
+            resolver.openOutputStream(uri).use { out ->
+                check(bitmap.compress(Bitmap.CompressFormat.JPEG, 95, checkNotNull(out))) { "JPEG compress failed" }
+            }
+        } catch (t: Throwable) {
+            resolver.delete(uri, null, null)
+            throw t
         }
         values.clear()
         values.put(MediaStore.Images.Media.IS_PENDING, 0)
