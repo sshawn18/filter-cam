@@ -13,6 +13,11 @@ import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import android.util.Size
+import android.view.Display
+import androidx.camera.core.Camera
+import androidx.camera.core.DisplayOrientedMeteringPointFactory
+import androidx.camera.core.FocusMeteringAction
+import com.filtercam.settings.FlashSetting
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
@@ -32,6 +37,7 @@ class CameraController(private val context: Context) {
         .build()
 
     private val captureExecutor = Executors.newSingleThreadExecutor()
+    @Volatile private var camera: Camera? = null
 
     fun bind(owner: LifecycleOwner, provider: Preview.SurfaceProvider, front: Boolean) {
         val future = ProcessCameraProvider.getInstance(context)
@@ -40,7 +46,7 @@ class CameraController(private val context: Context) {
             val preview = Preview.Builder().setResolutionSelector(selector).build()
             preview.setSurfaceProvider(provider)
             cp.unbindAll()
-            cp.bindToLifecycle(
+            camera = cp.bindToLifecycle(
                 owner,
                 if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA,
                 preview, imageCapture,
@@ -48,15 +54,43 @@ class CameraController(private val context: Context) {
         }, ContextCompat.getMainExecutor(context))
     }
 
+    fun unbind() {
+        val future = ProcessCameraProvider.getInstance(context)
+        future.addListener({ camera = null; future.get().unbindAll() }, ContextCompat.getMainExecutor(context))
+    }
+
+    fun setFlash(mode: FlashSetting) {
+        imageCapture.flashMode = when (mode) {
+            FlashSetting.OFF -> ImageCapture.FLASH_MODE_OFF
+            FlashSetting.ON -> ImageCapture.FLASH_MODE_ON
+            FlashSetting.AUTO -> ImageCapture.FLASH_MODE_AUTO
+        }
+    }
+
+    /** Multiplies the current zoom ratio by [factor], clamped to the camera's range. Main thread. */
+    fun zoomBy(factor: Float) {
+        val c = camera ?: return
+        val z = c.cameraInfo.zoomState.value ?: return
+        c.cameraControl.setZoomRatio((z.zoomRatio * factor).coerceIn(z.minZoomRatio, z.maxZoomRatio))
+    }
+
+    /** x,y are view pixels inside a view of size w x h that shows the whole preview. */
+    fun focusAt(display: Display?, x: Float, y: Float, w: Float, h: Float) {
+        val c = camera ?: return
+        val d = display ?: return
+        val point = DisplayOrientedMeteringPointFactory(d, c.cameraInfo, w, h).createPoint(x, y)
+        c.cameraControl.startFocusAndMetering(FocusMeteringAction.Builder(point).build())
+    }
+
     /** [onResult] is invoked on a background thread, not the main thread. */
-    fun capture(onResult: (Result<Bitmap>) -> Unit) {
+    fun capture(mirror: Boolean = false, onResult: (Result<Bitmap>) -> Unit) {
         imageCapture.takePicture(
             captureExecutor,
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
                     val result = runCatching {
                         val raw = image.toBitmap()
-                        val m = Matrix().apply { postRotate(image.imageInfo.rotationDegrees.toFloat()) }
+                        val m = Matrix().apply { postRotate(image.imageInfo.rotationDegrees.toFloat()); if (mirror) postScale(-1f, 1f) }
                         val rotated = Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, m, true)
                         if (rotated !== raw) raw.recycle()
                         rotated
