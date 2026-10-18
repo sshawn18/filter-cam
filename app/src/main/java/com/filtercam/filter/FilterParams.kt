@@ -1,6 +1,7 @@
 package com.filtercam.filter
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 enum class ParamKey(val label: String, val range: ClosedFloatingPointRange<Float>) {
@@ -88,9 +89,26 @@ data class FilterParams(
         p.with(k, p.get(k).coerceIn(k.range))
     }
 
+    fun toJson(): String = prettyJson.encodeToString(this)
+
     companion object {
         private val json = Json { ignoreUnknownKeys = true }
-        fun fromJson(s: String): FilterParams = json.decodeFromString<FilterParams>(s).clamped()
+        private val prettyJson = Json { prettyPrint = true; encodeDefaults = true }
+
+        fun parse(s: String): Result<FilterParams> = runCatching {
+            val p = try {
+                json.decodeFromString<FilterParams>(s)
+            } catch (e: IllegalArgumentException) { // includes SerializationException
+                throw IllegalArgumentException("Not a valid filter file")
+            }
+            require(p.name.isNotBlank()) { "The filter has no name" }
+            require(p.shadowColor.size == 3 && p.highlightColor.size == 3) {
+                "shadowColor and highlightColor must each have exactly 3 numbers"
+            }
+            p.clamped()
+        }
+
+        fun fromJson(s: String): FilterParams = parse(s).getOrThrow()
     }
 }
 
