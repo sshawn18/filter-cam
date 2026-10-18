@@ -22,8 +22,15 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import java.util.concurrent.Executors
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+
+data class ZoomInfo(val ratio: Float = 1f, val min: Float = 1f, val max: Float = 1f)
 
 class CameraController(private val context: Context) {
+    private val _zoom = MutableStateFlow(ZoomInfo())
+    val zoom: StateFlow<ZoomInfo> = _zoom
+
     private val selector = ResolutionSelector.Builder()
         .setAspectRatioStrategy(AspectRatioStrategy(AspectRatio.RATIO_4_3, AspectRatioStrategy.FALLBACK_RULE_AUTO))
         .build()
@@ -46,11 +53,13 @@ class CameraController(private val context: Context) {
             val preview = Preview.Builder().setResolutionSelector(selector).build()
             preview.setSurfaceProvider(provider)
             cp.unbindAll()
-            camera = cp.bindToLifecycle(
+            val cam = cp.bindToLifecycle(
                 owner,
                 if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA,
                 preview, imageCapture,
             )
+            camera = cam
+            cam.cameraInfo.zoomState.observe(owner) { z -> _zoom.value = ZoomInfo(z.zoomRatio, z.minZoomRatio, z.maxZoomRatio) }
         }, ContextCompat.getMainExecutor(context))
     }
 
@@ -58,6 +67,9 @@ class CameraController(private val context: Context) {
         val future = ProcessCameraProvider.getInstance(context)
         future.addListener({ camera = null; future.get().unbindAll() }, ContextCompat.getMainExecutor(context))
     }
+
+    /** [rotation] is a Surface.ROTATION_* value for how the phone is held; used for the saved photo's orientation. */
+    fun setTargetRotation(rotation: Int) { imageCapture.targetRotation = rotation }
 
     fun setFlash(mode: FlashSetting) {
         imageCapture.flashMode = when (mode) {
@@ -72,6 +84,13 @@ class CameraController(private val context: Context) {
         val c = camera ?: return
         val z = c.cameraInfo.zoomState.value ?: return
         c.cameraControl.setZoomRatio((z.zoomRatio * factor).coerceIn(z.minZoomRatio, z.maxZoomRatio))
+    }
+
+    /** Jumps to [ratio], clamped to the camera's zoom range. Main thread. */
+    fun setZoomRatio(ratio: Float) {
+        val c = camera ?: return
+        val z = c.cameraInfo.zoomState.value ?: return
+        c.cameraControl.setZoomRatio(ratio.coerceIn(z.minZoomRatio, z.maxZoomRatio))
     }
 
     /** x,y are view pixels inside a view of size w x h that shows the whole preview. */

@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import android.opengl.GLSurfaceView
 import android.os.Handler
 import android.os.Looper
+import android.view.OrientationEventListener
+import android.view.Surface
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -60,6 +62,7 @@ fun CameraScreen(
     val renderer = remember { GlFilterRenderer(ctx) }
     val controller = remember { CameraController(ctx) }
     val main = remember { Handler(Looper.getMainLooper()) }
+    val zoom by controller.zoom.collectAsState()
 
     renderer.params = params
     renderer.strength = strength
@@ -80,6 +83,24 @@ fun CameraScreen(
         }
         owner.lifecycle.addObserver(observer)
         onDispose { owner.lifecycle.removeObserver(observer); controller.unbind() }
+    }
+
+    DisposableEffect(ctx) {
+        val listener = object : OrientationEventListener(ctx) {
+            override fun onOrientationChanged(o: Int) {
+                if (o == ORIENTATION_UNKNOWN) return
+                controller.setTargetRotation(
+                    when (o) {
+                        in 45 until 135 -> Surface.ROTATION_270
+                        in 135 until 225 -> Surface.ROTATION_180
+                        in 225 until 315 -> Surface.ROTATION_90
+                        else -> Surface.ROTATION_0
+                    },
+                )
+            }
+        }
+        listener.enable()
+        onDispose { listener.disable() }
     }
 
     fun takePhoto() {
@@ -132,6 +153,7 @@ fun CameraScreen(
             )
             if (grid) GridOverlay(Modifier.fillMaxSize())
             focusPoint?.let { FocusRing(it, Modifier.fillMaxSize()) }
+            ZoomBar(zoom, front, onZoom = controller::setZoomRatio, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp))
         }
         Spacer(Modifier.weight(1f))
         if (showStrength) {

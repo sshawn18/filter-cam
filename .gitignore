@@ -5,3 +5,4 @@ scripts/env.ps1
 *.iml
 .idea/
 .superpowers/
+hs_err_pid*.log
