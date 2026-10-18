@@ -91,10 +91,11 @@ fun CameraScreen(vm: FilterViewModel) {
             },
             update = { it.requestRender() },
         )
+        val entries by vm.entries.collectAsState()
         LazyRow(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            itemsIndexed(vm.presets) { i, p ->
-                Text(p.name, color = if (p.name == params.name) Color.White else Color.Gray,
-                    modifier = Modifier.clickable { vm.select(i) })
+            itemsIndexed(entries) { _, e ->
+                Text(e.params.name, color = if (e.params.name == params.name) Color.White else Color.Gray,
+                    modifier = Modifier.clickable { vm.select(e.params.name) })
             }
         }
         Slider(value = strength, onValueChange = vm::setStrength, modifier = Modifier.padding(horizontal = 16.dp))
