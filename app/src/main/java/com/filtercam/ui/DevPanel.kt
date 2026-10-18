@@ -17,7 +17,7 @@ import com.filtercam.filter.ParamKey
 
 @Composable
 fun DevPanel(params: FilterParams, onChange: (ParamKey, Float) -> Unit) {
-    Column(Modifier.fillMaxWidth().heightIn(max = 240.dp).verticalScroll(rememberScrollState())) {
+    Column(Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
         ParamKey.values().forEach { k ->
             Row {
                 Text("${k.label}  %.2f".format(params.get(k)), color = Color.White)
