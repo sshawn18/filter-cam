@@ -19,10 +19,10 @@ In:
 Out (later): 4K/60 fps, pause, slow motion, landscape-oriented UI, HDR video, per-lens selection.
 
 ## Framing rules
-- `Frame(w, h)` ratios in the portrait view: 9:16 = 0.5625, 3:4 = 0.75, 1:1 = 1.0, Full = screen aspect (width/height of the app area, ~0.46), 2.39:1 = 1/2.39 (wide band in portrait view), 1.90:1 = 1/1.90.
+- Frame aspect = width/height as shown in the portrait view: 9:16 = 0.5625, 3:4 = 0.75, 1:1 = 1.0, Full = screen aspect (width/height of the app area, ~0.46), Cinema = 2.39 and IMAX = 1.90 (wide, low bands: full width, height = width/2.39 or width/1.90).
 - Source is the 3:4 sensor stream. Narrower or wider frames are center crops of it (field of view shrinks; same as the stock Samsung camera). The viewfinder is shown at the frame's aspect, centered, black elsewhere.
 - Photos: the filtered full-resolution bitmap is center-cropped to the frame after processing; photos keep the device-orientation rotation already implemented.
-- Video: output size = frame aspect at 1080 px on the short side, rounded to even numbers (e.g. 9:16 → 1080x1920, 3:4 → 1080x1440, 1:1 → 1080x1080, 2.39:1 → 1920x804... see formula in plan).
+- Video output size: if aspect <= 1, width = 1080 and height = round(1080 / aspect) rounded down to an even number (9:16 → 1080x1920, 3:4 → 1080x1440, 1:1 → 1080x1080, Full → 1080x(even)); if aspect > 1, width = 1920 and height = round(1920 / aspect) rounded down to an even number (Cinema → 1920x804, IMAX → 1920x1010). Both dimensions are always even.
 - The selected frame is remembered in settings.
 
 ## Architecture
