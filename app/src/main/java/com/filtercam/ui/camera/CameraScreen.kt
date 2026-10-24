@@ -35,6 +35,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.filtercam.camera.CameraController
+import com.filtercam.filter.FilterParams
 import com.filtercam.frame.Frame
 import com.filtercam.frame.cropRect
 import com.filtercam.frame.videoOrientationHint
@@ -91,7 +92,13 @@ fun CameraScreen(
     val zoom by controller.zoom.collectAsState()
     val exposure by controller.exposure.collectAsState()
 
-    renderer.params = params
+    // Unfiltered photos on the main lens (about 1x to 2x) get a gentle detail boost; other lenses stay untouched.
+    val mainLens = !front && zoom.ratio in 0.95f..2.95f
+    val effectiveParams =
+        if (params.isIdentity() && vm.settings.detailBoost && mainLens)
+            FilterParams(name = "Original", sharpness = 0.45f, clarity = 0.2f, highlightRolloff = 0.35f)
+        else params
+    renderer.params = effectiveParams
     renderer.strength = strength
     SideEffect {
         renderer.onSurfaceRecreated = { controller.bind(owner, renderer.surfaceProvider, front, useExtensions = night && !videoMode) }
@@ -170,7 +177,7 @@ fun CameraScreen(
     fun takePhoto() {
         if (busy) return
         busy = true
-        val p = params; val s = strength; val fa = frameAspect
+        val p = effectiveParams; val s = strength; val fa = frameAspect
         val quality = vm.settings.jpegQuality; val mirror = front && vm.settings.mirrorFront
         val original = p.isIdentity() || s == 0f
         val needsCrop = abs(fa - 0.75f) > 0.01f

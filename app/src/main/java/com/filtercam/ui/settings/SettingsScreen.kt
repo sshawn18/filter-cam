@@ -25,6 +25,7 @@ fun SettingsScreen(vm: FilterViewModel, onBack: () -> Unit) {
     var flash by remember { mutableStateOf(s.flashDefault) }
     var quality by remember { mutableStateOf(s.jpegQuality.toFloat()) }
     var mirror by remember { mutableStateOf(s.mirrorFront) }
+    var boost by remember { mutableStateOf(s.detailBoost) }
     val version = remember { runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "" }
     Column(Modifier.fillMaxSize().background(Color.Black)) {
         TopAppBar(
@@ -34,6 +35,8 @@ fun SettingsScreen(vm: FilterViewModel, onBack: () -> Unit) {
         )
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             SwitchRow("Grid lines on startup", grid) { grid = it; s.gridDefault = it }
+            SwitchRow("Sharpen main-lens photos (1x to 2x)", boost) { boost = it; s.detailBoost = it }
+            Text("Adds crisp detail and calmer whites to unfiltered photos on the main lens. Turn off to keep the camera JPEG untouched.", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
             Text("Default flash", color = Color.White, modifier = Modifier.padding(top = 16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FlashSetting.values().forEach { f ->

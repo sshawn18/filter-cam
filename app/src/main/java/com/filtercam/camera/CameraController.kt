@@ -27,6 +27,7 @@ import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.DisplayOrientedMeteringPointFactory
 import androidx.camera.core.FocusMeteringAction
+import androidx.camera.core.SurfaceOrientedMeteringPointFactory
 import com.filtercam.settings.FlashSetting
 import androidx.camera.extensions.ExtensionMode
 import androidx.camera.extensions.ExtensionsManager
@@ -103,6 +104,13 @@ class CameraController(private val context: Context) {
 
             fun attach(cam: Camera) {
                 camera = cam
+                // Focus and expose on a wide centre area, so the camera does not lock onto only the nearest object.
+                runCatching {
+                    val centre = SurfaceOrientedMeteringPointFactory(1f, 1f).createPoint(0.5f, 0.5f, 0.7f)
+                    cam.cameraControl.startFocusAndMetering(
+                        FocusMeteringAction.Builder(centre, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE).disableAutoCancel().build(),
+                    )
+                }
                 Log.i("FilterCam", "Photo capture resolution: ${imageCapture.resolutionInfo?.resolution}")
                 cam.cameraInfo.exposureState.let { ex ->
                     _exposure.value = ExposureInfo(ex.exposureCompensationIndex, ex.exposureCompensationRange.lower, ex.exposureCompensationRange.upper, ex.exposureCompensationStep.toFloat())

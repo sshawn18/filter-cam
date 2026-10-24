@@ -32,6 +32,8 @@ class SettingsRepository(private val kv: KeyValueStore) {
         get() = kv.getInt("quality", 95).coerceIn(70, 100); set(v) = kv.putInt("quality", v.coerceIn(70, 100))
     var mirrorFront: Boolean
         get() = kv.getBoolean("mirror", false); set(v) = kv.putBoolean("mirror", v)
+    var detailBoost: Boolean
+        get() = kv.getBoolean("detail", true); set(v) = kv.putBoolean("detail", v)
     var lastFilter: String?
         get() = kv.getString("lastFilter", null); set(v) = kv.putString("lastFilter", v)
 }
