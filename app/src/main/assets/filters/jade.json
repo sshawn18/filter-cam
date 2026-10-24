@@ -13,6 +13,8 @@
   "greenDeepen": 0.7,
   "skinProtect": 0.8,
   "halation": 0.35,
+  "halationColor": [0.9, 1.0, 0.8],
+  "halationThreshold": 0.65,
   "grain": 0.5,
   "vignette": 0.55
 }

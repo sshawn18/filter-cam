@@ -27,9 +27,9 @@ uniform sampler2D uTex;
 uniform mat2 uUvLin;
 uniform float uTime, uAspect;
 uniform float uExposure, uTemperature, uTint, uContrast, uBlackLift;
-uniform vec3 uShadowColor, uHighlightColor;
-uniform float uShadowAmount, uHighlightAmount, uSaturation, uGreenDeepen,
-              uSkinProtect, uHalation, uGrain, uVignette, uStrength;
+uniform vec3 uShadowColor, uHighlightColor, uHalationColor;
+uniform float uShadowAmount, uHighlightAmount, uSaturation, uGreenDeepen, uCyanShift,
+              uSkinProtect, uHalation, uHalationThreshold, uGrain, uVignette, uStrength;
 
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 
@@ -79,6 +79,8 @@ void main() {
     vec3 g = hsv;
     g.z *= 1.0 - 0.35 * uGreenDeepen * green;
     g.x += 0.03 * uGreenDeepen * green;
+    float blueMask = smoothstep(0.50, 0.56, hsv.x) * (1.0 - smoothstep(0.70, 0.78, hsv.x)) * smoothstep(0.10, 0.30, hsv.y);
+    g.x -= 0.08 * uCyanShift * blueMask;
     g.y *= 1.0 + 0.15 * uGreenDeepen * green;
     c = hsv2rgb(vec3(fract(g.x), clamp(g.y, 0.0, 1.0), clamp(g.z, 0.0, 1.0)));
 
@@ -101,12 +103,15 @@ void main() {
 
     // 7. halation: glow from bright areas, ring sampled in screen space
     vec3 glow = vec3(0.0);
-    for (int i = 0; i < 8; i++) {
-        float a = 6.2831853 * float(i) / 8.0;
-        vec2 off = vec2(cos(a) / uAspect, sin(a)) * 0.012;
-        glow += max(texture(uTex, vUv + uUvLin * off).rgb - vec3(0.65), 0.0);
+    float jitter = hash(floor(vScreen * 977.0)) * 6.2831853;
+    for (int i = 0; i < 16; i++) {
+        float fi = float(i);
+        float a = jitter + fi * 2.3999632;
+        float r = sqrt((fi + 0.5) / 16.0) * 0.03;
+        vec2 off = vec2(cos(a) / uAspect, sin(a)) * r;
+        glow += max(texture(uTex, vUv + uUvLin * off).rgb - vec3(uHalationThreshold), 0.0);
     }
-    c += (glow / 8.0) * uHalation * 3.0 * vec3(0.9, 1.0, 0.8);
+    c += (glow / 16.0) * uHalation * 3.0 * uHalationColor;
 
     // 8. grain (midtone weighted), vignette
     float n = hash(floor(vScreen * vec2(uAspect, 1.0) * 1440.0) + floor(uTime * 24.0)) - 0.5;

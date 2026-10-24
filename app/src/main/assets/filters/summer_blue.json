@@ -1,18 +1,33 @@
 {
   "name": "Summer Blue",
-  "exposure": 0.05,
-  "temperature": -0.1,
-  "tint": -0.15,
-  "contrast": 1.2,
-  "blackLift": 0.05,
-  "shadowColor": [0.05, 0.3, 0.35],
-  "shadowAmount": 0.45,
-  "highlightColor": [0.85, 0.95, 1.0],
-  "highlightAmount": 0.25,
-  "saturation": 1.2,
-  "greenDeepen": 0.35,
+  "exposure": 0.0,
+  "temperature": 0.1,
+  "tint": -0.35,
+  "contrast": 1.1,
+  "blackLift": 0.09,
+  "shadowColor": [
+    0.1,
+    0.35,
+    0.3
+  ],
+  "shadowAmount": 0.5,
+  "highlightColor": [
+    0.8,
+    0.95,
+    0.95
+  ],
+  "highlightAmount": 0.3,
+  "saturation": 0.95,
+  "greenDeepen": 0.2,
   "skinProtect": 0.7,
-  "halation": 0.45,
+  "halation": 0.4,
+  "halationColor": [
+    0.85,
+    1.0,
+    1.0
+  ],
+  "halationThreshold": 0.6,
   "grain": 0.3,
-  "vignette": 0.3
+  "vignette": 0.25,
+  "cyanShift": 0.85
 }

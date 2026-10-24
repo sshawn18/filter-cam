@@ -1,18 +1,33 @@
 {
   "name": "Edgerunners",
-  "exposure": 0.45,
-  "temperature": -0.2,
-  "tint": 0.2,
-  "contrast": 0.9,
-  "blackLift": 0.1,
-  "shadowColor": [0.35, 0.3, 0.7],
-  "shadowAmount": 0.6,
-  "highlightColor": [1.0, 0.95, 0.95],
-  "highlightAmount": 0.25,
-  "saturation": 0.9,
+  "exposure": 0.4,
+  "temperature": -0.15,
+  "tint": 0.1,
+  "contrast": 0.8,
+  "blackLift": 0.15,
+  "shadowColor": [
+    0.55,
+    0.5,
+    0.8
+  ],
+  "shadowAmount": 0.35,
+  "highlightColor": [
+    0.95,
+    0.92,
+    1.0
+  ],
+  "highlightAmount": 0.2,
+  "saturation": 0.7,
   "greenDeepen": 0.0,
   "skinProtect": 0.6,
-  "halation": 0.95,
-  "grain": 0.3,
-  "vignette": 0.15
+  "halation": 0.9,
+  "halationColor": [
+    0.9,
+    0.85,
+    1.0
+  ],
+  "halationThreshold": 0.45,
+  "grain": 0.25,
+  "vignette": 0.0,
+  "cyanShift": 0.0
 }

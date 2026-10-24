@@ -35,7 +35,7 @@ class FilterParamsTest {
 
     @Test fun parseRejectsShortColorList() {
         val r = FilterParams.parse("""{"name":"X","shadowColor":[0.1]}""")
-        assertEquals("shadowColor and highlightColor must each have exactly 3 numbers", r.exceptionOrNull()?.message)
+        assertEquals("shadowColor, highlightColor and halationColor must each have exactly 3 numbers", r.exceptionOrNull()?.message)
     }
 
     @Test fun parseRejectsBlankName() {
@@ -51,5 +51,16 @@ class FilterParamsTest {
     @Test fun toJsonRoundTrips() {
         val p = FilterParams(name = "Rt", exposure = 0.5f, shadowColor = listOf(0.1f, 0.2f, 0.3f))
         assertEquals(p, FilterParams.parse(p.toJson()).getOrThrow())
+    }
+
+    @Test fun parseRejectsShortHalationColor() {
+        val r = FilterParams.parse("""{"name":"X","halationColor":[1.0,1.0]}""")
+        assertEquals("shadowColor, highlightColor and halationColor must each have exactly 3 numbers", r.exceptionOrNull()?.message)
+    }
+
+    @Test fun oldFilterFilesWithoutGlowFieldsStillLoadWithDefaults() {
+        val p = FilterParams.parse("""{"name":"Old","halation":0.4}""").getOrThrow()
+        assertEquals(listOf(1f, 1f, 1f), p.halationColor)
+        assertEquals(0.65f, p.halationThreshold, 0.0001f)
     }
 }

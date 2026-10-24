@@ -16,8 +16,11 @@ enum class ParamKey(val label: String, val range: ClosedFloatingPointRange<Float
     HIGHLIGHT_AMOUNT("Highlight tint", 0f..1f),
     SATURATION("Saturation", 0f..1.6f),
     GREEN_DEEPEN("Green deepen", 0f..1f),
+    CYAN_SHIFT("Blue to cyan", 0f..1f),
     SKIN_PROTECT("Skin protect", 0f..1f),
     HALATION("Halation", 0f..1f),
+    HALATION_R("Glow R", 0f..1f), HALATION_G("Glow G", 0f..1f), HALATION_B("Glow B", 0f..1f),
+    HALATION_THRESHOLD("Glow threshold", 0f..1f),
     GRAIN("Grain", 0f..1f),
     VIGNETTE("Vignette", 0f..1f),
 }
@@ -36,8 +39,11 @@ data class FilterParams(
     val highlightAmount: Float = 0f,
     val saturation: Float = 1f,
     val greenDeepen: Float = 0f,
+    val cyanShift: Float = 0f,
     val skinProtect: Float = 0f,
     val halation: Float = 0f,
+    val halationColor: List<Float> = listOf(1f, 1f, 1f),
+    val halationThreshold: Float = 0.65f,
     val grain: Float = 0f,
     val vignette: Float = 0f,
 ) {
@@ -57,8 +63,13 @@ data class FilterParams(
         ParamKey.HIGHLIGHT_AMOUNT -> highlightAmount
         ParamKey.SATURATION -> saturation
         ParamKey.GREEN_DEEPEN -> greenDeepen
+        ParamKey.CYAN_SHIFT -> cyanShift
         ParamKey.SKIN_PROTECT -> skinProtect
         ParamKey.HALATION -> halation
+        ParamKey.HALATION_R -> halationColor[0]
+        ParamKey.HALATION_G -> halationColor[1]
+        ParamKey.HALATION_B -> halationColor[2]
+        ParamKey.HALATION_THRESHOLD -> halationThreshold
         ParamKey.GRAIN -> grain
         ParamKey.VIGNETTE -> vignette
     }
@@ -79,8 +90,13 @@ data class FilterParams(
         ParamKey.HIGHLIGHT_AMOUNT -> copy(highlightAmount = v)
         ParamKey.SATURATION -> copy(saturation = v)
         ParamKey.GREEN_DEEPEN -> copy(greenDeepen = v)
+        ParamKey.CYAN_SHIFT -> copy(cyanShift = v)
         ParamKey.SKIN_PROTECT -> copy(skinProtect = v)
         ParamKey.HALATION -> copy(halation = v)
+        ParamKey.HALATION_R -> copy(halationColor = halationColor.replaced(0, v))
+        ParamKey.HALATION_G -> copy(halationColor = halationColor.replaced(1, v))
+        ParamKey.HALATION_B -> copy(halationColor = halationColor.replaced(2, v))
+        ParamKey.HALATION_THRESHOLD -> copy(halationThreshold = v)
         ParamKey.GRAIN -> copy(grain = v)
         ParamKey.VIGNETTE -> copy(vignette = v)
     }
@@ -102,8 +118,8 @@ data class FilterParams(
                 throw IllegalArgumentException("Not a valid filter file")
             }
             require(p.name.isNotBlank()) { "The filter has no name" }
-            require(p.shadowColor.size == 3 && p.highlightColor.size == 3) {
-                "shadowColor and highlightColor must each have exactly 3 numbers"
+            require(p.shadowColor.size == 3 && p.highlightColor.size == 3 && p.halationColor.size == 3) {
+                "shadowColor, highlightColor and halationColor must each have exactly 3 numbers"
             }
             p.clamped()
         }
