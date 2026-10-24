@@ -10,9 +10,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,7 +35,33 @@ import com.filtercam.settings.FlashSetting
 import com.filtercam.ui.theme.Palette
 
 @Composable
-fun TopBar(flash: FlashSetting, showFlash: Boolean, grid: Boolean, onFlash: () -> Unit, onGrid: () -> Unit, onSettings: () -> Unit) {
+fun FrameDropdown(selected: Frame, enabled: Boolean, onSelect: (Frame) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            Modifier.clip(RoundedCornerShape(16.dp)).background(Color(0x55000000)).clickable(enabled = enabled) { open = true }
+                .padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(selected.label, color = if (enabled) Palette.Accent else Color.Gray, fontSize = 14.sp)
+            Icon(Icons.Default.ArrowDropDown, "Choose frame", tint = Color.White)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            Frame.values().forEach { f ->
+                DropdownMenuItem(
+                    text = { Text(f.label, color = if (f == selected) Palette.Accent else Color.Unspecified) },
+                    onClick = { open = false; onSelect(f) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun TopBar(
+    flash: FlashSetting, showFlash: Boolean, grid: Boolean, frame: Frame, frameEnabled: Boolean,
+    onFlash: () -> Unit, onGrid: () -> Unit, onFrame: (Frame) -> Unit, onSettings: () -> Unit,
+) {
     Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         if (showFlash) {
             IconButton(onClick = onFlash) {
@@ -42,6 +74,8 @@ fun TopBar(flash: FlashSetting, showFlash: Boolean, grid: Boolean, onFlash: () -
         IconButton(onClick = onGrid) {
             Icon(if (grid) Icons.Default.GridOn else Icons.Default.GridOff, "Grid", tint = if (grid) Palette.Accent else Color.White)
         }
+        Spacer(Modifier.width(6.dp))
+        FrameDropdown(frame, frameEnabled, onFrame)
         Spacer(Modifier.weight(1f))
         IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "Settings", tint = Color.White) }
     }
@@ -142,44 +176,3 @@ fun ShutterRow(
     }
 }
 
-@Composable
-fun ModeSwitchVertical(video: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        listOf(true to "VIDEO", false to "PHOTO").forEach { (isVideo, label) ->
-            val on = video == isVideo
-            Text(
-                label, fontSize = 12.sp,
-                color = if (on) Palette.Accent else Color.White.copy(alpha = if (enabled) 0.85f else 0.4f),
-                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(enabled = enabled) { onChange(isVideo) }
-                    .padding(horizontal = 10.dp, vertical = 5.dp),
-            )
-        }
-    }
-}
-
-@Composable
-fun ShutterColumn(
-    lastPhoto: ImageBitmap?, busy: Boolean, video: Boolean, recording: Boolean,
-    onGallery: () -> Unit, onShutter: () -> Unit, onFlip: () -> Unit,
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Box(
-            Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(Palette.Panel).clickable(enabled = !recording, onClick = onGallery),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (lastPhoto != null) Image(lastPhoto, "Open gallery", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            else Icon(Icons.Default.PhotoLibrary, "Open gallery", tint = Color.White)
-        }
-        Box(Modifier.size(72.dp).border(4.dp, Color.White, CircleShape), contentAlignment = Alignment.Center) {
-            val inner = when {
-                recording -> Modifier.size(30.dp).clip(RoundedCornerShape(7.dp)).background(Color(0xFFFF3B30))
-                video -> Modifier.size(56.dp).clip(CircleShape).background(Color(0xFFFF3B30))
-                else -> Modifier.size(56.dp).clip(CircleShape).background(if (busy) Color.Gray else Color.White)
-            }
-            Box(inner.clickable(enabled = !busy || recording, onClick = onShutter))
-        }
-        IconButton(onClick = onFlip, enabled = !recording, modifier = Modifier.size(44.dp)) {
-            Icon(Icons.Default.FlipCameraAndroid, "Flip camera", tint = Color.White.copy(alpha = if (recording) 0.3f else 1f), modifier = Modifier.size(26.dp))
-        }
-    }
-}

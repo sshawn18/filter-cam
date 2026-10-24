@@ -22,6 +22,13 @@ import androidx.core.content.FileProvider
 import com.filtercam.filter.FilterParams
 import com.filtercam.ui.DevPanel
 import com.filtercam.ui.FilterViewModel
+import com.filtercam.ui.camera.swatchColor
+import com.filtercam.ui.theme.Palette
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.ui.draw.clip
 import java.io.File
 
 fun shareFile(ctx: Context, file: File, mime: String) {
@@ -144,5 +151,37 @@ fun ManageFiltersSheet(vm: FilterViewModel, onDismiss: () -> Unit) {
             confirmButton = { TextButton(onClick = { vm.deleteFilter(p.name); deleting = null }) { Text("Delete") } },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FilterPickerSheet(vm: FilterViewModel, onManage: () -> Unit, onDismiss: () -> Unit) {
+    val entries by vm.entries.collectAsState()
+    val params by vm.params.collectAsState()
+    val strength by vm.strength.collectAsState()
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surface) {
+        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
+            Text("Filters", style = MaterialTheme.typography.titleMedium)
+            Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Strength ${(strength * 100).toInt()}%")
+                Slider(strength, vm::setStrength, Modifier.weight(1f).padding(start = 12.dp))
+            }
+            LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                items(entries, key = { it.params.name }) { e ->
+                    val sel = e.params.name == params.name
+                    Row(
+                        Modifier.fillMaxWidth().clickable { vm.select(e.params.name); onDismiss() }.padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(Modifier.size(20.dp).clip(CircleShape).background(swatchColor(e.params)))
+                        Spacer(Modifier.width(14.dp))
+                        Text(e.params.name, color = if (sel) Palette.Accent else MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
+                        if (sel) Icon(Icons.Default.Check, "Selected", tint = Palette.Accent)
+                    }
+                }
+            }
+            TextButton(onClick = onManage) { Text("Import / manage filters") }
+        }
     }
 }

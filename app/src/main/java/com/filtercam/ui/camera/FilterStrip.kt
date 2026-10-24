@@ -31,28 +31,12 @@ fun swatchColor(p: FilterParams): Color {
 }
 
 @Composable
-fun FilterStrip(
-    entries: List<FilterStore.Entry>, selected: String,
-    onSelect: (String) -> Unit, onTune: () -> Unit, onManage: () -> Unit,
+fun BottomActionRow(
+    zoom: com.filtercam.camera.ZoomInfo, onZoom: (Float) -> Unit, onTune: () -> Unit, onFilters: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onTune) { Icon(Icons.Default.Tune, "Tune filter", tint = Color.White) }
-        LazyRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(entries, key = { it.params.name }) { e ->
-                val sel = e.params.name == selected
-                val shape = RoundedCornerShape(20.dp)
-                Row(
-                    Modifier.clip(shape).background(if (sel) Palette.PanelSelected else Palette.Panel)
-                        .border(1.dp, if (sel) Palette.Accent else Color.Transparent, shape)
-                        .clickable { onSelect(e.params.name) }.padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(Modifier.size(14.dp).clip(CircleShape).background(swatchColor(e.params)))
-                    Spacer(Modifier.width(6.dp))
-                    Text(e.params.name, color = Color.White, style = MaterialTheme.typography.labelLarge, maxLines = 1)
-                }
-            }
-        }
-        IconButton(onClick = onManage) { Icon(Icons.Default.Add, "Manage filters", tint = Color.White) }
+        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { ZoomBar(zoom, onZoom) }
+        IconButton(onClick = onFilters) { Icon(Icons.Default.Add, "Filters", tint = Color.White) }
     }
 }
