@@ -17,6 +17,9 @@ enum class ParamKey(val label: String, val range: ClosedFloatingPointRange<Float
     SATURATION("Saturation", 0f..1.6f),
     GREEN_DEEPEN("Green deepen", 0f..1f),
     CYAN_SHIFT("Blue to cyan", 0f..1f),
+    SHARPNESS("Sharpness", 0f..1f),
+    CLARITY("Clarity", 0f..1f),
+    ROLLOFF("Highlight roll-off", 0f..1f),
     SKIN_PROTECT("Skin protect", 0f..1f),
     HALATION("Halation", 0f..1f),
     HALATION_R("Glow R", 0f..1f), HALATION_G("Glow G", 0f..1f), HALATION_B("Glow B", 0f..1f),
@@ -40,6 +43,9 @@ data class FilterParams(
     val saturation: Float = 1f,
     val greenDeepen: Float = 0f,
     val cyanShift: Float = 0f,
+    val sharpness: Float = 0f,
+    val clarity: Float = 0f,
+    val highlightRolloff: Float = 0f,
     val skinProtect: Float = 0f,
     val halation: Float = 0f,
     val halationColor: List<Float> = listOf(1f, 1f, 1f),
@@ -64,6 +70,9 @@ data class FilterParams(
         ParamKey.SATURATION -> saturation
         ParamKey.GREEN_DEEPEN -> greenDeepen
         ParamKey.CYAN_SHIFT -> cyanShift
+        ParamKey.SHARPNESS -> sharpness
+        ParamKey.CLARITY -> clarity
+        ParamKey.ROLLOFF -> highlightRolloff
         ParamKey.SKIN_PROTECT -> skinProtect
         ParamKey.HALATION -> halation
         ParamKey.HALATION_R -> halationColor[0]
@@ -91,6 +100,9 @@ data class FilterParams(
         ParamKey.SATURATION -> copy(saturation = v)
         ParamKey.GREEN_DEEPEN -> copy(greenDeepen = v)
         ParamKey.CYAN_SHIFT -> copy(cyanShift = v)
+        ParamKey.SHARPNESS -> copy(sharpness = v)
+        ParamKey.CLARITY -> copy(clarity = v)
+        ParamKey.ROLLOFF -> copy(highlightRolloff = v)
         ParamKey.SKIN_PROTECT -> copy(skinProtect = v)
         ParamKey.HALATION -> copy(halation = v)
         ParamKey.HALATION_R -> copy(halationColor = halationColor.replaced(0, v))

@@ -28,7 +28,7 @@ uniform mat2 uUvLin;
 uniform float uTime, uAspect;
 uniform float uExposure, uTemperature, uTint, uContrast, uBlackLift;
 uniform vec3 uShadowColor, uHighlightColor, uHalationColor;
-uniform float uShadowAmount, uHighlightAmount, uSaturation, uGreenDeepen, uCyanShift,
+uniform float uShadowAmount, uHighlightAmount, uSaturation, uGreenDeepen, uCyanShift, uSharpness, uClarity, uRolloff,
               uSkinProtect, uHalation, uHalationThreshold, uGrain, uVignette, uStrength;
 
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
@@ -58,6 +58,17 @@ float hash(vec2 p) {
 void main() {
     vec3 orig = texture(uTex, vUv).rgb;
     vec3 c = orig;
+
+    // detail: unsharp mask at two radii (one output pixel apart / six pixels apart)
+    if (uSharpness > 0.0 || uClarity > 0.0) {
+        vec2 px = fwidth(vUv);
+        vec3 bs = 0.25 * (texture(uTex, vUv + vec2(px.x, 0.0)).rgb + texture(uTex, vUv - vec2(px.x, 0.0)).rgb
+                        + texture(uTex, vUv + vec2(0.0, px.y)).rgb + texture(uTex, vUv - vec2(0.0, px.y)).rgb);
+        vec2 pl = px * 6.0;
+        vec3 bl = 0.25 * (texture(uTex, vUv + vec2(pl.x, 0.0)).rgb + texture(uTex, vUv - vec2(pl.x, 0.0)).rgb
+                        + texture(uTex, vUv + vec2(0.0, pl.y)).rgb + texture(uTex, vUv - vec2(0.0, pl.y)).rgb);
+        c = clamp(orig + uSharpness * 1.2 * (orig - bs) + uClarity * 0.6 * (orig - bl), 0.0, 1.0);
+    }
 
     // 1. exposure + white balance
     c *= exp2(uExposure);
@@ -116,6 +127,10 @@ void main() {
     // 8. grain (midtone weighted), vignette
     float n = hash(floor(vScreen * vec2(uAspect, 1.0) * 1440.0) + floor(uTime * 24.0)) - 0.5;
     c += n * uGrain * 0.14 * (1.0 - abs(l * 2.0 - 1.0) * 0.5);
+    // highlight roll-off: soft knee so bright areas compress instead of clipping to white
+    float knee = 1.0 - 0.45 * uRolloff;
+    float range = max(1.0 - knee, 0.001);
+    c = min(c, vec3(knee)) + range * (1.0 - exp(-max(c - vec3(knee), 0.0) / range));
     float d = length((vScreen - 0.5) * vec2(uAspect, 1.0));
     c *= 1.0 - uVignette * smoothstep(0.25, 0.85, d);
 

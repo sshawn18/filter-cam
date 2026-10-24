@@ -1,0 +1,13 @@
+{
+  "name": "Clear",
+  "exposure": -0.25,
+  "temperature": 0.05,
+  "tint": 0.0,
+  "contrast": 1.15,
+  "blackLift": 0.0,
+  "saturation": 1.1,
+  "skinProtect": 0.5,
+  "sharpness": 0.55,
+  "clarity": 0.35,
+  "highlightRolloff": 0.7
+}

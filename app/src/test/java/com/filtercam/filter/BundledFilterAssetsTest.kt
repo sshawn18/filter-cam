@@ -17,6 +17,6 @@ class BundledFilterAssetsTest {
             p.getOrThrow().name
         }
         assertEquals(names.size, names.map { it.lowercase() }.toSet().size)
-        assertTrue(names.containsAll(listOf("Original", "Jade", "Fallen Angels", "Sunny Day", "Edgerunners")))
+        assertTrue(names.containsAll(listOf("Original", "Clear", "Jade", "Fallen Angels", "Sunny Day", "Edgerunners")))
     }
 }
