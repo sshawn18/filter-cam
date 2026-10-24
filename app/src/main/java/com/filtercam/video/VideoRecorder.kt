@@ -43,7 +43,7 @@ class VideoRecorder(private val context: Context) {
 
     /** Starts the encoders and returns the surface the renderer must draw into. Throws if anything fails (nothing is left behind). */
     @SuppressLint("MissingPermission")
-    fun start(width: Int, height: Int, withAudio: Boolean): Surface {
+    fun start(width: Int, height: Int, withAudio: Boolean, orientationHint: Int = 0): Surface {
         check(!isRecording) { "Already recording" }
         val resolver = context.contentResolver
         val values = ContentValues().apply {
@@ -57,6 +57,7 @@ class VideoRecorder(private val context: Context) {
         try {
             pfd = checkNotNull(resolver.openFileDescriptor(u, "rw"))
             muxer = MediaMuxer(pfd!!.fileDescriptor, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            muxer!!.setOrientationHint(orientationHint)
 
             val vFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
                 setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)

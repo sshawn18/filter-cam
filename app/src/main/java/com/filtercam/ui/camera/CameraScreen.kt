@@ -39,6 +39,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.filtercam.camera.CameraController
 import com.filtercam.frame.Frame
 import com.filtercam.frame.cropRect
+import com.filtercam.frame.videoOrientationHint
 import com.filtercam.frame.videoSize
 import com.filtercam.gl.GlFilterRenderer
 import com.filtercam.gl.PhotoProcessor
@@ -76,6 +77,7 @@ fun CameraScreen(
     var recStartMs by remember { mutableLongStateOf(0L) }
     var frameAspect by remember { mutableFloatStateOf(0.75f) }
     var uiLandscape by remember { mutableStateOf(false) }
+    var deviceRotation by remember { mutableIntStateOf(Surface.ROTATION_0) }
     val activity = ctx as? Activity
     var showStrength by remember { mutableStateOf(false) }
     var showTune by remember { mutableStateOf(false) }
@@ -128,7 +130,7 @@ fun CameraScreen(
     fun startRecording(withAudio: Boolean) {
         val (w, h) = videoSize(frameAspect)
         runCatching {
-            val surface = recorder.start(w, h, withAudio)
+            val surface = recorder.start(w, h, withAudio, videoOrientationHint(deviceRotation, front))
             renderer.startRecording(surface, w, h)
             recStartMs = SystemClock.elapsedRealtime()
             elapsedSec = 0
@@ -156,14 +158,14 @@ fun CameraScreen(
         val listener = object : OrientationEventListener(ctx) {
             override fun onOrientationChanged(o: Int) {
                 if (o == ORIENTATION_UNKNOWN) return
-                controller.setTargetRotation(
-                    when (o) {
-                        in 45 until 135 -> Surface.ROTATION_270
-                        in 135 until 225 -> Surface.ROTATION_180
-                        in 225 until 315 -> Surface.ROTATION_90
-                        else -> Surface.ROTATION_0
-                    },
-                )
+                val r = when (o) {
+                    in 45 until 135 -> Surface.ROTATION_270
+                    in 135 until 225 -> Surface.ROTATION_180
+                    in 225 until 315 -> Surface.ROTATION_90
+                    else -> Surface.ROTATION_0
+                }
+                deviceRotation = r
+                controller.setTargetRotation(r)
             }
         }
         listener.enable()
@@ -215,10 +217,11 @@ fun CameraScreen(
         val a = frame.aspect(screenAspect)
         val rotation = view.display?.rotation ?: Surface.ROTATION_0
         SideEffect { frameAspect = a; uiLandscape = landscape; renderer.displayRotation = rotation }
-        val heightLimited = landscape && maxWidth / a > maxHeight
+        // Fit the frame inside the screen: tall/narrow frames (Full, Cinema, IMAX) are height-limited, so the left/right edges are trimmed.
+        val heightLimited = maxWidth / a > maxHeight
         val vfW = if (heightLimited) maxHeight * a else maxWidth
         val vfH = if (heightLimited) maxHeight else maxWidth / a
-        val isFull = frame == Frame.FULL
+        val isFull = vfH > maxHeight - 348.dp
 
         // Viewfinder, cropped to the chosen frame; the controls float over it.
         Box(

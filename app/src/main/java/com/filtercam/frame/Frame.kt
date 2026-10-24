@@ -1,13 +1,16 @@
 package com.filtercam.frame
 
+import android.view.Surface
+
 /** Photo/video framing. [aspect] is width/height as shown in the portrait viewfinder. */
 enum class Frame(val label: String, private val fixedAspect: Float?) {
     R9_16("9:16", 9f / 16f),
     R3_4("3:4", 3f / 4f),
     R1_1("1:1", 1f),
     FULL("Full", null),
-    CINEMA("2.39:1", 2.39f),
-    IMAX("1.90:1", 1.90f);
+    // Cinema/IMAX: shown in the portrait screen as tall strips (left/right edges trimmed). Held sideways, they are the wide 2.39:1 / 1.90:1 shapes.
+    CINEMA("2.39:1", 1f / 2.39f),
+    IMAX("1.90:1", 1f / 1.90f);
 
     fun aspect(screenAspect: Float): Float = fixedAspect ?: screenAspect
 }
@@ -31,4 +34,15 @@ fun cropRect(sw: Int, sh: Int, aspect: Float): CropRect {
         val h = (sw / aspect).toInt().coerceIn(1, sh)
         CropRect(0, (sh - h) / 2, sw, h)
     }
+}
+
+/** MediaMuxer orientation hint (clockwise degrees applied at playback) so a clip filmed with the phone turned plays upright. */
+fun videoOrientationHint(surfaceRotation: Int, front: Boolean): Int {
+    val deg = when (surfaceRotation) {
+        Surface.ROTATION_90 -> 90
+        Surface.ROTATION_180 -> 180
+        Surface.ROTATION_270 -> 270
+        else -> 0
+    }
+    return if (front) deg else (360 - deg) % 360
 }
