@@ -37,11 +37,15 @@ import java.util.concurrent.Executors
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
+data class ExposureInfo(val index: Int = 0, val min: Int = 0, val max: Int = 0, val stepEv: Float = 0f)
+
 data class ZoomInfo(val ratio: Float = 1f, val min: Float = 1f, val max: Float = 1f)
 
 class CameraController(private val context: Context) {
     private val _zoom = MutableStateFlow(ZoomInfo())
     val zoom: StateFlow<ZoomInfo> = _zoom
+    private val _exposure = MutableStateFlow(ExposureInfo())
+    val exposure: StateFlow<ExposureInfo> = _exposure
 
     private val selector = ResolutionSelector.Builder()
         .setAspectRatioStrategy(AspectRatioStrategy(AspectRatio.RATIO_4_3, AspectRatioStrategy.FALLBACK_RULE_AUTO))
@@ -100,6 +104,9 @@ class CameraController(private val context: Context) {
             fun attach(cam: Camera) {
                 camera = cam
                 Log.i("FilterCam", "Photo capture resolution: ${imageCapture.resolutionInfo?.resolution}")
+                cam.cameraInfo.exposureState.let { ex ->
+                    _exposure.value = ExposureInfo(ex.exposureCompensationIndex, ex.exposureCompensationRange.lower, ex.exposureCompensationRange.upper, ex.exposureCompensationStep.toFloat())
+                }
                 cam.cameraInfo.zoomState.observe(owner) { z -> _zoom.value = ZoomInfo(z.zoomRatio, z.minZoomRatio, z.maxZoomRatio) }
             }
 
@@ -136,6 +143,13 @@ class CameraController(private val context: Context) {
                 if (cam != null) attach(cam) else plain()
             }, ContextCompat.getMainExecutor(context))
         }, ContextCompat.getMainExecutor(context))
+    }
+
+    /** Brightness: exposure compensation in camera steps (negative is darker). */
+    fun setExposureIndex(index: Int) {
+        val c = camera ?: return
+        c.cameraControl.setExposureCompensationIndex(index)
+        _exposure.value = _exposure.value.copy(index = index)
     }
 
     fun unbind() {

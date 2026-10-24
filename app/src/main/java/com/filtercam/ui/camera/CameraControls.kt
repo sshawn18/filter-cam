@@ -59,8 +59,8 @@ fun FrameDropdown(selected: Frame, enabled: Boolean, onSelect: (Frame) -> Unit) 
 
 @Composable
 fun TopBar(
-    flash: FlashSetting, showFlash: Boolean, grid: Boolean, night: Boolean, showNight: Boolean, frame: Frame, frameEnabled: Boolean,
-    onFlash: () -> Unit, onGrid: () -> Unit, onNight: () -> Unit, onFrame: (Frame) -> Unit, onSettings: () -> Unit,
+    flash: FlashSetting, showFlash: Boolean, grid: Boolean, night: Boolean, showNight: Boolean, frame: Frame, frameEnabled: Boolean, exposureOn: Boolean,
+    onFlash: () -> Unit, onGrid: () -> Unit, onNight: () -> Unit, onExposure: () -> Unit, onFrame: (Frame) -> Unit, onSettings: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         if (showFlash) {
@@ -78,6 +78,9 @@ fun TopBar(
             IconButton(onClick = onNight) {
                 Icon(Icons.Default.NightsStay, "Night mode", tint = if (night) Palette.Accent else Color.White)
             }
+        }
+        IconButton(onClick = onExposure) {
+            Icon(Icons.Default.WbSunny, "Brightness", tint = if (exposureOn) Palette.Accent else Color.White)
         }
         Spacer(Modifier.width(6.dp))
         FrameDropdown(frame, frameEnabled, onFrame)

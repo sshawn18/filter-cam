@@ -73,6 +73,7 @@ fun CameraScreen(
     var frame by remember { mutableStateOf(Frame.R3_4) }
     var videoMode by remember { mutableStateOf(false) }
     var night by remember { mutableStateOf(false) }
+    var showExposure by remember { mutableStateOf(false) }
     var recording by remember { mutableStateOf(false) }
     var elapsedSec by remember { mutableIntStateOf(0) }
     var recStartMs by remember { mutableLongStateOf(0L) }
@@ -88,6 +89,7 @@ fun CameraScreen(
     val recorder = remember { VideoRecorder(ctx) }
     val main = remember { Handler(Looper.getMainLooper()) }
     val zoom by controller.zoom.collectAsState()
+    val exposure by controller.exposure.collectAsState()
 
     renderer.params = params
     renderer.strength = strength
@@ -261,11 +263,22 @@ fun CameraScreen(
 
         Column(Modifier.align(Alignment.TopCenter).background(Color(0x66000000))) {
             TopBar(
-                flash, showFlash = !front, grid = grid, night = night, showNight = !videoMode, frame = frame, frameEnabled = !recording,
+                flash, showFlash = !front, grid = grid, night = night, showNight = !videoMode, frame = frame, frameEnabled = !recording, exposureOn = showExposure,
                 onFlash = { flash = FlashSetting.values()[(flash.ordinal + 1) % 3] },
-                onGrid = { grid = !grid }, onNight = { night = !night; vm.message(if (night) "Night mode on: hold still for a couple of seconds" else "Night mode off") },
+                onGrid = { grid = !grid }, onExposure = { showExposure = !showExposure },
+                onNight = { night = !night; vm.message(if (night) "Night mode on: hold still for a couple of seconds" else "Night mode off") },
                 onFrame = { frame = it }, onSettings = onOpenSettings,
             )
+            if (showExposure && exposure.max > exposure.min) {
+                Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Brightness %+.1f".format(exposure.index * exposure.stepEv), color = Color.White)
+                    Slider(
+                        value = exposure.index.toFloat(), onValueChange = { controller.setExposureIndex(it.toInt()) },
+                        valueRange = exposure.min.toFloat()..exposure.max.toFloat(),
+                        modifier = Modifier.weight(1f).padding(start = 12.dp),
+                    )
+                }
+            }
         }
         if (recording) RecTimer(elapsedSec, Modifier.align(Alignment.TopCenter).padding(top = 60.dp))
 
