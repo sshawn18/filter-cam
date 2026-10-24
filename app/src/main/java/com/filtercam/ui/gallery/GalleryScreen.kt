@@ -23,6 +23,11 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import android.net.Uri
+import android.widget.MediaController
+import android.widget.VideoView
 import com.filtercam.gallery.GalleryRepository
 import com.filtercam.gallery.Photo
 import com.filtercam.ui.theme.Palette
@@ -34,6 +39,13 @@ private fun Thumb(photo: Photo, repo: GalleryRepository, w: Int, h: Int, modifie
     val bmp by produceState<ImageBitmap?>(null, photo.uri) { value = withContext(Dispatchers.IO) { repo.thumbnail(photo.uri, w, h) } }
     Box(modifier.background(Palette.Panel), contentAlignment = Alignment.Center) {
         bmp?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = scale) } ?: Text("...", color = Color.Gray)
+        if (photo.isVideo && w < 1000) {
+            val sec = (photo.durationMs / 1000).toInt()
+            Text(
+                "▶ %d:%02d".format(sec / 60, sec % 60), color = Color.White, fontSize = 11.sp,
+                modifier = Modifier.align(Alignment.BottomStart).padding(4.dp).background(Color(0x99000000)).padding(horizontal = 4.dp),
+            )
+        }
     }
 }
 
@@ -50,7 +62,7 @@ fun GalleryScreen(photos: List<Photo>, repo: GalleryRepository, onBack: () -> Un
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No photos yet. Take one!", color = Color.Gray) }
         } else {
             LazyVerticalGrid(GridCells.Fixed(3), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                itemsIndexed(photos, key = { _, p -> p.id }) { i, p ->
+                itemsIndexed(photos, key = { _, p -> p.key }) { i, p ->
                     Thumb(p, repo, 320, 320, Modifier.aspectRatio(1f).clickable { onOpen(i) }, ContentScale.Crop)
                 }
             }
@@ -73,7 +85,7 @@ fun PhotoViewer(photos: List<Photo>, startIndex: Int, repo: GalleryRepository, o
                 IconButton(onClick = {
                     current?.let {
                         val send = Intent(Intent.ACTION_SEND).apply {
-                            type = "image/jpeg"; putExtra(Intent.EXTRA_STREAM, it.uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            type = if (it.isVideo) "video/mp4" else "image/jpeg"; putExtra(Intent.EXTRA_STREAM, it.uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
                         ctx.startActivity(Intent.createChooser(send, "Share photo"))
                     }
@@ -86,7 +98,9 @@ fun PhotoViewer(photos: List<Photo>, startIndex: Int, repo: GalleryRepository, o
             ),
         )
         HorizontalPager(pager, Modifier.fillMaxSize()) { page ->
-            photos.getOrNull(page)?.let { Thumb(it, repo, 1600, 2133, Modifier.fillMaxSize(), ContentScale.Fit) }
+            photos.getOrNull(page)?.let {
+                if (it.isVideo) VideoPlayer(it.uri) else Thumb(it, repo, 1600, 2133, Modifier.fillMaxSize(), ContentScale.Fit)
+            }
         }
     }
     if (confirm && current != null) {
@@ -97,4 +111,20 @@ fun PhotoViewer(photos: List<Photo>, startIndex: Int, repo: GalleryRepository, o
             dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancel") } },
         )
     }
+}
+
+@Composable
+private fun VideoPlayer(uri: Uri) {
+    AndroidView(
+        modifier = Modifier.fillMaxSize(),
+        factory = { ctx ->
+            VideoView(ctx).apply {
+                val mc = MediaController(ctx)
+                mc.setAnchorView(this)
+                setMediaController(mc)
+                setVideoURI(uri)
+                setOnPreparedListener { it.isLooping = false; seekTo(1) }
+            }
+        },
+    )
 }

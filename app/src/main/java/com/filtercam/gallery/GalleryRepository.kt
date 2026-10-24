@@ -8,22 +8,32 @@ import android.util.Size
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 
-data class Photo(val id: Long, val uri: Uri)
+data class Photo(val id: Long, val uri: Uri, val isVideo: Boolean = false, val durationMs: Long = 0, val added: Long = 0) {
+    val key: String get() = uri.toString()
+}
 
 class GalleryRepository(private val context: Context) {
     fun list(): List<Photo> {
         val out = ArrayList<Photo>()
-        val base = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        val imgBase = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         runCatching {
             context.contentResolver.query(
-                base, arrayOf(MediaStore.Images.Media._ID),
-                "${MediaStore.Images.Media.RELATIVE_PATH} LIKE ?", arrayOf("Pictures/FilterCam%"),
-                "${MediaStore.Images.Media.DATE_ADDED} DESC, ${MediaStore.Images.Media._ID} DESC",
+                imgBase, arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DATE_ADDED),
+                "${MediaStore.Images.Media.RELATIVE_PATH} LIKE ?", arrayOf("Pictures/FilterCam%"), null,
             )?.use { c ->
-                while (c.moveToNext()) { val id = c.getLong(0); out += Photo(id, ContentUris.withAppendedId(base, id)) }
+                while (c.moveToNext()) { val id = c.getLong(0); out += Photo(id, ContentUris.withAppendedId(imgBase, id), false, 0, c.getLong(1)) }
             }
         }
-        return out
+        val vidBase = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        runCatching {
+            context.contentResolver.query(
+                vidBase, arrayOf(MediaStore.Video.Media._ID, MediaStore.Video.Media.DATE_ADDED, MediaStore.Video.Media.DURATION),
+                "${MediaStore.Video.Media.RELATIVE_PATH} LIKE ?", arrayOf("Movies/FilterCam%"), null,
+            )?.use { c ->
+                while (c.moveToNext()) { val id = c.getLong(0); out += Photo(id, ContentUris.withAppendedId(vidBase, id), true, c.getLong(2), c.getLong(1)) }
+            }
+        }
+        return out.sortedWith(compareByDescending<Photo> { it.added }.thenByDescending { it.id })
     }
 
     fun thumbnail(uri: Uri, w: Int, h: Int): ImageBitmap? =

@@ -2,9 +2,13 @@ package com.filtercam.gl
 
 import android.content.Context
 import android.graphics.SurfaceTexture
+import android.opengl.EGL14
+import android.opengl.EGLExt
+import android.opengl.EGLSurface
 import android.opengl.GLES11Ext
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
+import android.opengl.Matrix
 import android.os.Handler
 import android.os.Looper
 import android.view.Surface
@@ -12,8 +16,27 @@ import androidx.camera.core.Preview
 import androidx.camera.core.SurfaceRequest
 import androidx.core.content.ContextCompat
 import com.filtercam.filter.FilterParams
+import javax.microedition.khronos.egl.EGL10
 import javax.microedition.khronos.egl.EGLConfig
+import javax.microedition.khronos.egl.EGLDisplay
 import javax.microedition.khronos.opengles.GL10
+
+/** Picks an RGBA8888 ES3 config that MediaCodec input surfaces accept (EGL_RECORDABLE_ANDROID), falling back to a plain one. */
+class RecordableConfigChooser : GLSurfaceView.EGLConfigChooser {
+    override fun chooseConfig(egl: EGL10, display: EGLDisplay): EGLConfig {
+        fun pick(recordable: Boolean): EGLConfig? {
+            val attrs = ArrayList<Int>().apply {
+                addAll(listOf(EGL10.EGL_RED_SIZE, 8, EGL10.EGL_GREEN_SIZE, 8, EGL10.EGL_BLUE_SIZE, 8, EGL10.EGL_ALPHA_SIZE, 8, EGL10.EGL_RENDERABLE_TYPE, 0x40))
+                if (recordable) addAll(listOf(0x3142, 1))
+                add(EGL10.EGL_NONE)
+            }.toIntArray()
+            val cfgs = arrayOfNulls<EGLConfig>(1)
+            val n = IntArray(1)
+            return if (egl.eglChooseConfig(display, attrs, cfgs, 1, n) && n[0] > 0) cfgs[0] else null
+        }
+        return pick(true) ?: pick(false) ?: error("No EGL config")
+    }
+}
 
 class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
     @Volatile var params = FilterParams(name = "none")
@@ -28,10 +51,37 @@ class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
     private var oesTex = 0
     private var surfaceTexture: SurfaceTexture? = null
     private var pending: SurfaceRequest? = null
+    private var viewW = 1
+    private var viewH = 1
     private var aspect = 3f / 4f
     private val st = FloatArray(16)
+    private val crop = FloatArray(16)
     private val texMatrix = FloatArray(16)
     private val t0 = System.nanoTime()
+
+    // --- video recording: a second EGL window surface (the encoder's input) drawn after the screen ---
+    private class RecTarget(val surface: Surface, val w: Int, val h: Int)
+    @Volatile private var recTarget: RecTarget? = null
+    private var recEgl: EGLSurface = EGL14.EGL_NO_SURFACE
+
+    /** Starts mirroring every drawn frame into [surface] (a MediaCodec input surface) at [w] x [h]. Any thread. */
+    fun startRecording(surface: Surface, w: Int, h: Int) {
+        recTarget = RecTarget(surface, w, h)
+        glView.requestRender()
+    }
+
+    /** Stops mirroring; [onStopped] runs on the GL thread after the encoder surface is detached. */
+    fun stopRecording(onStopped: () -> Unit) {
+        glView.queueEvent {
+            recTarget = null
+            if (recEgl != EGL14.EGL_NO_SURFACE) {
+                EGL14.eglDestroySurface(EGL14.eglGetCurrentDisplay(), recEgl)
+                recEgl = EGL14.EGL_NO_SURFACE
+            }
+            onStopped()
+        }
+        glView.requestRender()
+    }
 
     val surfaceProvider = Preview.SurfaceProvider { req ->
         synchronized(this) { pending = req }
@@ -62,6 +112,7 @@ class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
         oesTex = 0
         program?.release()
         program = null
+        recEgl = EGL14.EGL_NO_SURFACE // surface died with the old context
     }
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
@@ -93,6 +144,8 @@ class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
+        viewW = width
+        viewH = height
         GLES30.glViewport(0, 0, width, height)
         aspect = width.toFloat() / height
     }
@@ -101,9 +154,44 @@ class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
         val tex = surfaceTexture ?: return
         tex.updateTexImage()
         tex.getTransformMatrix(st)
-        // st already contains the camera transform (sensor rotation + front mirror) for this portrait-locked activity; verify on device
-        System.arraycopy(st, 0, texMatrix, 0, 16)
+        // The camera image is upright 3:4 after st (st already holds sensor rotation + front mirror).
+        // Center-crop it to the frame aspect (the view is sized to the frame): C is applied to the quad coords first.
+        val srcAspect = 3f / 4f
+        val sx = if (aspect < srcAspect) aspect / srcAspect else 1f
+        val sy = if (aspect > srcAspect) srcAspect / aspect else 1f
+        Matrix.setIdentityM(crop, 0)
+        Matrix.translateM(crop, 0, 0.5f, 0.5f, 0f)
+        Matrix.scaleM(crop, 0, sx, sy, 1f)
+        Matrix.translateM(crop, 0, -0.5f, -0.5f, 0f)
+        Matrix.multiplyMM(texMatrix, 0, st, 0, crop, 0)
         val time = ((System.nanoTime() - t0) / 1_000_000L % 100_000L) / 1000f
         program?.draw(oesTex, texMatrix, params, strength, time, aspect)
+        recTarget?.let { drawToEncoder(it, time) }
+    }
+
+    private fun drawToEncoder(target: RecTarget, time: Float) {
+        val dpy = EGL14.eglGetCurrentDisplay()
+        val ctx = EGL14.eglGetCurrentContext()
+        val prevDraw = EGL14.eglGetCurrentSurface(EGL14.EGL_DRAW)
+        val prevRead = EGL14.eglGetCurrentSurface(EGL14.EGL_READ)
+        try {
+            if (recEgl == EGL14.EGL_NO_SURFACE) {
+                val cfgId = IntArray(1)
+                EGL14.eglQueryContext(dpy, ctx, EGL14.EGL_CONFIG_ID, cfgId, 0)
+                val cfgs = arrayOfNulls<android.opengl.EGLConfig>(1)
+                val n = IntArray(1)
+                EGL14.eglChooseConfig(dpy, intArrayOf(EGL14.EGL_CONFIG_ID, cfgId[0], EGL14.EGL_NONE), 0, cfgs, 0, 1, n, 0)
+                recEgl = EGL14.eglCreateWindowSurface(dpy, cfgs[0], target.surface, intArrayOf(EGL14.EGL_NONE), 0)
+                if (recEgl == EGL14.EGL_NO_SURFACE) { recTarget = null; return }
+            }
+            EGL14.eglMakeCurrent(dpy, recEgl, recEgl, ctx)
+            GLES30.glViewport(0, 0, target.w, target.h)
+            program?.draw(oesTex, texMatrix, params, strength, time, target.w.toFloat() / target.h)
+            EGLExt.eglPresentationTimeANDROID(dpy, recEgl, System.nanoTime())
+            EGL14.eglSwapBuffers(dpy, recEgl)
+        } finally {
+            EGL14.eglMakeCurrent(dpy, prevDraw, prevRead, ctx)
+            GLES30.glViewport(0, 0, viewW, viewH)
+        }
     }
 }

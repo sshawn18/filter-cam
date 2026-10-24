@@ -22,6 +22,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.material3.Text
+import com.filtercam.frame.Frame
 import com.filtercam.settings.FlashSetting
 import com.filtercam.ui.theme.Palette
 
@@ -61,24 +64,80 @@ fun FocusRing(at: Offset, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun ShutterRow(lastPhoto: ImageBitmap?, busy: Boolean, onGallery: () -> Unit, onShutter: () -> Unit, onFlip: () -> Unit) {
+fun FrameSelector(selected: Frame, enabled: Boolean, onSelect: (Frame) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().height(36.dp).padding(horizontal = 8.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Frame.values().forEach { f ->
+            val on = f == selected
+            Text(
+                f.label, fontSize = 13.sp,
+                color = if (on) Palette.Accent else Color.White.copy(alpha = if (enabled) 1f else 0.4f),
+                modifier = Modifier.clip(RoundedCornerShape(12.dp))
+                    .background(if (on) Color(0xFF2A2A2A) else Color.Transparent)
+                    .clickable(enabled = enabled) { onSelect(f) }.padding(horizontal = 10.dp, vertical = 6.dp),
+            )
+        }
+    }
+}
+
+@Composable
+fun ModeSwitch(video: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+        listOf(false to "PHOTO", true to "VIDEO").forEach { (isVideo, label) ->
+            val on = video == isVideo
+            Text(
+                label, fontSize = 14.sp,
+                color = if (on) Palette.Accent else Color.White.copy(alpha = if (enabled) 0.85f else 0.4f),
+                modifier = Modifier.clip(RoundedCornerShape(14.dp)).clickable(enabled = enabled) { onChange(isVideo) }
+                    .padding(horizontal = 18.dp, vertical = 6.dp),
+            )
+        }
+    }
+}
+
+@Composable
+fun RecTimer(elapsedSec: Int, modifier: Modifier = Modifier) {
+    Row(
+        modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xAA000000)).padding(horizontal = 12.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(10.dp).clip(CircleShape).background(Color(0xFFFF3B30)))
+        Spacer(Modifier.width(8.dp))
+        Text("%02d:%02d".format(elapsedSec / 60, elapsedSec % 60), color = Color.White, fontSize = 15.sp)
+    }
+}
+
+@Composable
+fun ShutterRow(
+    lastPhoto: ImageBitmap?, busy: Boolean, video: Boolean, recording: Boolean,
+    onGallery: () -> Unit, onShutter: () -> Unit, onFlip: () -> Unit,
+) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            Modifier.size(52.dp).clip(RoundedCornerShape(12.dp)).background(Palette.Panel).clickable(onClick = onGallery),
+            Modifier.size(52.dp).clip(RoundedCornerShape(12.dp)).background(Palette.Panel).clickable(enabled = !recording, onClick = onGallery),
             contentAlignment = Alignment.Center,
         ) {
             if (lastPhoto != null) Image(lastPhoto, "Open gallery", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             else Icon(Icons.Default.PhotoLibrary, "Open gallery", tint = Color.White)
         }
-        Box(
-            Modifier.size(80.dp).border(4.dp, Color.White, CircleShape).padding(7.dp).clip(CircleShape)
-                .background(if (busy) Color.Gray else Color.White).clickable(enabled = !busy, onClick = onShutter),
-        )
-        IconButton(onClick = onFlip, modifier = Modifier.size(52.dp)) {
-            Icon(Icons.Default.FlipCameraAndroid, "Flip camera", tint = Color.White, modifier = Modifier.size(30.dp))
+        Box(Modifier.size(80.dp).border(4.dp, Color.White, CircleShape), contentAlignment = Alignment.Center) {
+            val inner = when {
+                recording -> Modifier.size(34.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFFFF3B30))
+                video -> Modifier.size(64.dp).clip(CircleShape).background(Color(0xFFFF3B30))
+                else -> Modifier.size(64.dp).clip(CircleShape).background(if (busy) Color.Gray else Color.White)
+            }
+            Box(inner.clickable(enabled = !busy || recording, onClick = onShutter))
+        }
+        IconButton(onClick = onFlip, enabled = !recording, modifier = Modifier.size(52.dp)) {
+            Icon(
+                Icons.Default.FlipCameraAndroid, "Flip camera",
+                tint = Color.White.copy(alpha = if (recording) 0.3f else 1f), modifier = Modifier.size(30.dp),
+            )
         }
     }
 }
