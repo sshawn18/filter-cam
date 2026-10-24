@@ -1,6 +1,13 @@
 package com.filtercam.camera
 
+import android.content.ContentValues
 import android.content.Context
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.os.Environment
+import android.provider.MediaStore
+import android.util.Log
+import android.view.Surface
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import androidx.camera.core.AspectRatio
@@ -35,14 +42,25 @@ class CameraController(private val context: Context) {
         .setAspectRatioStrategy(AspectRatioStrategy(AspectRatio.RATIO_4_3, AspectRatioStrategy.FALLBACK_RULE_AUTO))
         .setResolutionStrategy(ResolutionStrategy(Size(1920, 1440), ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER))
         .build()
-    private val captureSelector = ResolutionSelector.Builder()
-        .setAspectRatioStrategy(AspectRatioStrategy(AspectRatio.RATIO_4_3, AspectRatioStrategy.FALLBACK_RULE_AUTO))
-        .setResolutionStrategy(ResolutionStrategy(Size(4032, 3024), ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER))
-        .build()
-    private val imageCapture = ImageCapture.Builder()
-        .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-        .setResolutionSelector(captureSelector)
-        .build()
+    /** Best-quality photo capture. highRes allows the sensor high-resolution mode (up to about 50 MP); otherwise capped at 12 MP. */
+    private fun buildCapture(highRes: Boolean): ImageCapture {
+        val rs = ResolutionSelector.Builder()
+            .setAspectRatioStrategy(AspectRatioStrategy(AspectRatio.RATIO_4_3, AspectRatioStrategy.FALLBACK_RULE_AUTO))
+            .setResolutionStrategy(
+                ResolutionStrategy(if (highRes) Size(8160, 6120) else Size(4032, 3024), ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER),
+            )
+            .apply { if (highRes) setAllowedResolutionMode(ResolutionSelector.PREFER_HIGHER_RESOLUTION_OVER_CAPTURE_RATE) }
+            .build()
+        return ImageCapture.Builder()
+            .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+            .setJpegQuality(100)
+            .setResolutionSelector(rs)
+            .build()
+    }
+
+    private var imageCapture = buildCapture(highRes = true)
+    private var targetRotation = Surface.ROTATION_0
+    private var flashMode = ImageCapture.FLASH_MODE_OFF
 
     private val captureExecutor = Executors.newSingleThreadExecutor()
     @Volatile private var camera: Camera? = null
@@ -51,14 +69,25 @@ class CameraController(private val context: Context) {
         val future = ProcessCameraProvider.getInstance(context)
         future.addListener({
             val cp = future.get()
-            val preview = Preview.Builder().setResolutionSelector(selector).build()
-            preview.setSurfaceProvider(provider)
-            cp.unbindAll()
-            val cam = cp.bindToLifecycle(
-                owner,
-                if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA,
-                preview, imageCapture,
-            )
+            fun bindAll(): Camera {
+                val preview = Preview.Builder().setResolutionSelector(selector).build()
+                preview.setSurfaceProvider(provider)
+                cp.unbindAll()
+                return cp.bindToLifecycle(
+                    owner,
+                    if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA,
+                    preview, imageCapture,
+                )
+            }
+            val cam = try {
+                bindAll()
+            } catch (e: IllegalArgumentException) {
+                // High-resolution capture is not supported together with this preview: fall back to 12 MP.
+                Log.w("FilterCam", "High-res capture unavailable, using 12 MP", e)
+                imageCapture = buildCapture(highRes = false).also { it.targetRotation = targetRotation; it.flashMode = flashMode }
+                bindAll()
+            }
+            Log.i("FilterCam", "Photo capture resolution: ${imageCapture.resolutionInfo?.resolution}")
             camera = cam
             cam.cameraInfo.zoomState.observe(owner) { z -> _zoom.value = ZoomInfo(z.zoomRatio, z.minZoomRatio, z.maxZoomRatio) }
         }, ContextCompat.getMainExecutor(context))
@@ -70,14 +99,15 @@ class CameraController(private val context: Context) {
     }
 
     /** [rotation] is a Surface.ROTATION_* value for how the phone is held; used for the saved photo's orientation. */
-    fun setTargetRotation(rotation: Int) { imageCapture.targetRotation = rotation }
+    fun setTargetRotation(rotation: Int) { targetRotation = rotation; imageCapture.targetRotation = rotation }
 
     fun setFlash(mode: FlashSetting) {
-        imageCapture.flashMode = when (mode) {
+        flashMode = when (mode) {
             FlashSetting.OFF -> ImageCapture.FLASH_MODE_OFF
             FlashSetting.ON -> ImageCapture.FLASH_MODE_ON
             FlashSetting.AUTO -> ImageCapture.FLASH_MODE_AUTO
         }
+        imageCapture.flashMode = flashMode
     }
 
     /** Multiplies the current zoom ratio by [factor], clamped to the camera's range. Main thread. */
@@ -109,7 +139,14 @@ class CameraController(private val context: Context) {
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
                     val result = runCatching {
-                        val raw = image.toBitmap()
+                        // Decode downsampled so a 50 MP capture never needs more than about 12 MP of memory.
+                        val buf = image.planes[0].buffer
+                        val bytes = ByteArray(buf.remaining()).also { buf.get(it) }
+                        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                        var sample = 1
+                        while ((bounds.outWidth / sample).toLong() * (bounds.outHeight / sample) > 13_500_000L) sample *= 2
+                        val raw = checkNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample }))
                         val m = Matrix().apply { postRotate(image.imageInfo.rotationDegrees.toFloat()); if (mirror) postScale(-1f, 1f) }
                         val rotated = Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, m, true)
                         if (rotated !== raw) raw.recycle()
@@ -117,6 +154,28 @@ class CameraController(private val context: Context) {
                     }
                     image.close()
                     onResult(result)
+                }
+                override fun onError(e: ImageCaptureException) = onResult(Result.failure(e))
+            },
+        )
+    }
+
+    /** Saves the camera JPEG untouched, straight to Pictures/FilterCam (full capture resolution). */
+    fun captureOriginal(mirror: Boolean, onResult: (Result<Uri>) -> Unit) {
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, "FilterCam_${System.currentTimeMillis()}.jpg")
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/FilterCam")
+        }
+        val options = ImageCapture.OutputFileOptions.Builder(context.contentResolver, MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            .setMetadata(ImageCapture.Metadata().apply { isReversedHorizontal = mirror })
+            .build()
+        imageCapture.takePicture(
+            options, captureExecutor,
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                    val u = output.savedUri
+                    onResult(if (u != null) Result.success(u) else Result.failure(IllegalStateException("Saved, but no file address returned")))
                 }
                 override fun onError(e: ImageCaptureException) = onResult(Result.failure(e))
             },

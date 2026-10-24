@@ -105,6 +105,9 @@ data class FilterParams(
         p.with(k, p.get(k).coerceIn(k.range))
     }
 
+    /** True when every setting is neutral, so the filter would not change the picture. */
+    fun isIdentity(): Boolean = copy(name = "") == FilterParams(name = "")
+
     fun toJson(): String = prettyJson.encodeToString(this)
 
     companion object {

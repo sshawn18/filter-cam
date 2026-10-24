@@ -50,6 +50,7 @@ import com.filtercam.ui.filters.ManageFiltersSheet
 import com.filtercam.ui.filters.TuneSheet
 import com.filtercam.video.VideoRecorder
 import kotlinx.coroutines.delay
+import kotlin.math.abs
 import java.util.concurrent.Executors
 
 private val worker = Executors.newSingleThreadExecutor()
@@ -168,13 +169,26 @@ fun CameraScreen(
         busy = true
         val p = params; val s = strength; val fa = frameAspect
         val quality = vm.settings.jpegQuality; val mirror = front && vm.settings.mirrorFront
+        val original = p.isIdentity() || s == 0f
+        val needsCrop = abs(fa - 0.75f) > 0.01f
+        if (original && !needsCrop) {
+            // No filter and no crop: keep the camera full-resolution JPEG exactly as captured.
+            controller.captureOriginal(mirror) { result ->
+                main.post {
+                    result.onSuccess { vm.message("Saved original to Pictures/FilterCam"); onPhotoSaved() }
+                        .onFailure { vm.message("Capture failed: ${it.message}") }
+                    busy = false
+                }
+            }
+            return
+        }
         controller.capture(mirror) { result ->
             result.onSuccess { bmp ->
                 worker.execute {
                     var out: Bitmap? = null
                     try {
                         runCatching {
-                            val processed = PhotoProcessor().process(bmp, p, s)
+                            val processed = if (original) bmp else PhotoProcessor().process(bmp, p, s)
                             // A sideways shot is saved landscape, so the frame is turned with it.
                             val target = if (processed.width > processed.height) 1f / fa else fa
                             val r = cropRect(processed.width, processed.height, target)
