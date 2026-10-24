@@ -1,0 +1,33 @@
+{
+  "name": "Sunny Day",
+  "exposure": 0.25,
+  "temperature": 0.25,
+  "tint": 0.0,
+  "contrast": 1.15,
+  "blackLift": 0.04,
+  "shadowColor": [
+    0.2,
+    0.3,
+    0.45
+  ],
+  "shadowAmount": 0.3,
+  "highlightColor": [
+    1.0,
+    0.9,
+    0.7
+  ],
+  "highlightAmount": 0.35,
+  "saturation": 1.25,
+  "greenDeepen": 0.0,
+  "cyanShift": 0.3,
+  "skinProtect": 0.8,
+  "halation": 0.6,
+  "halationColor": [
+    1.0,
+    0.9,
+    0.7
+  ],
+  "halationThreshold": 0.55,
+  "grain": 0.2,
+  "vignette": 0.2
+}

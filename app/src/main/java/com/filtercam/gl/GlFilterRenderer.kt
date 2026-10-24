@@ -41,6 +41,8 @@ class RecordableConfigChooser : GLSurfaceView.EGLConfigChooser {
 class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
     @Volatile var params = FilterParams(name = "none")
     @Volatile var strength = 1f
+    /** Surface.ROTATION_* of the display; landscape rotations turn the portrait-upright camera image by 90 degrees. */
+    @Volatile var displayRotation = Surface.ROTATION_0
     lateinit var glView: GLSurfaceView
     /** Invoked on the main thread after the GL context was recreated (not on first creation). */
     @Volatile var onSurfaceRecreated: (() -> Unit)? = null
@@ -56,6 +58,8 @@ class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
     private var aspect = 3f / 4f
     private val st = FloatArray(16)
     private val crop = FloatArray(16)
+    private val rot = FloatArray(16)
+    private val tmp = FloatArray(16)
     private val texMatrix = FloatArray(16)
     private val t0 = System.nanoTime()
 
@@ -154,16 +158,25 @@ class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
         val tex = surfaceTexture ?: return
         tex.updateTexImage()
         tex.getTransformMatrix(st)
-        // The camera image is upright 3:4 after st (st already holds sensor rotation + front mirror).
-        // Center-crop it to the frame aspect (the view is sized to the frame): C is applied to the quad coords first.
-        val srcAspect = 3f / 4f
+        // The camera image is upright 3:4 (portrait) after st. Landscape display: turn it 90 degrees to be upright 4:3.
+        // Then center-crop to the frame aspect (the view is sized to the frame). Order: crop, rotate, st.
+        val rotation = displayRotation
+        val landscape = rotation == Surface.ROTATION_90 || rotation == Surface.ROTATION_270
+        val srcAspect = if (landscape) 4f / 3f else 3f / 4f
         val sx = if (aspect < srcAspect) aspect / srcAspect else 1f
         val sy = if (aspect > srcAspect) srcAspect / aspect else 1f
         Matrix.setIdentityM(crop, 0)
         Matrix.translateM(crop, 0, 0.5f, 0.5f, 0f)
         Matrix.scaleM(crop, 0, sx, sy, 1f)
         Matrix.translateM(crop, 0, -0.5f, -0.5f, 0f)
-        Matrix.multiplyMM(texMatrix, 0, st, 0, crop, 0)
+        Matrix.setIdentityM(rot, 0)
+        if (landscape) {
+            Matrix.translateM(rot, 0, 0.5f, 0.5f, 0f)
+            Matrix.rotateM(rot, 0, if (rotation == Surface.ROTATION_90) 90f else -90f, 0f, 0f, 1f)
+            Matrix.translateM(rot, 0, -0.5f, -0.5f, 0f)
+        }
+        Matrix.multiplyMM(tmp, 0, rot, 0, crop, 0)
+        Matrix.multiplyMM(texMatrix, 0, st, 0, tmp, 0)
         val time = ((System.nanoTime() - t0) / 1_000_000L % 100_000L) / 1000f
         program?.draw(oesTex, texMatrix, params, strength, time, aspect)
         recTarget?.let { drawToEncoder(it, time) }

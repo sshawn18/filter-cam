@@ -141,3 +141,45 @@ fun ShutterRow(
         }
     }
 }
+
+@Composable
+fun ModeSwitchVertical(video: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        listOf(true to "VIDEO", false to "PHOTO").forEach { (isVideo, label) ->
+            val on = video == isVideo
+            Text(
+                label, fontSize = 12.sp,
+                color = if (on) Palette.Accent else Color.White.copy(alpha = if (enabled) 0.85f else 0.4f),
+                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(enabled = enabled) { onChange(isVideo) }
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+            )
+        }
+    }
+}
+
+@Composable
+fun ShutterColumn(
+    lastPhoto: ImageBitmap?, busy: Boolean, video: Boolean, recording: Boolean,
+    onGallery: () -> Unit, onShutter: () -> Unit, onFlip: () -> Unit,
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Box(
+            Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(Palette.Panel).clickable(enabled = !recording, onClick = onGallery),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (lastPhoto != null) Image(lastPhoto, "Open gallery", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            else Icon(Icons.Default.PhotoLibrary, "Open gallery", tint = Color.White)
+        }
+        Box(Modifier.size(72.dp).border(4.dp, Color.White, CircleShape), contentAlignment = Alignment.Center) {
+            val inner = when {
+                recording -> Modifier.size(30.dp).clip(RoundedCornerShape(7.dp)).background(Color(0xFFFF3B30))
+                video -> Modifier.size(56.dp).clip(CircleShape).background(Color(0xFFFF3B30))
+                else -> Modifier.size(56.dp).clip(CircleShape).background(if (busy) Color.Gray else Color.White)
+            }
+            Box(inner.clickable(enabled = !busy || recording, onClick = onShutter))
+        }
+        IconButton(onClick = onFlip, enabled = !recording, modifier = Modifier.size(44.dp)) {
+            Icon(Icons.Default.FlipCameraAndroid, "Flip camera", tint = Color.White.copy(alpha = if (recording) 0.3f else 1f), modifier = Modifier.size(26.dp))
+        }
+    }
+}

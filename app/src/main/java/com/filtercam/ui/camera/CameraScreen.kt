@@ -1,6 +1,8 @@
 package com.filtercam.ui.camera
 
 import android.Manifest
+import android.app.Activity
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.opengl.GLSurfaceView
@@ -15,6 +17,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -71,6 +75,8 @@ fun CameraScreen(
     var elapsedSec by remember { mutableIntStateOf(0) }
     var recStartMs by remember { mutableLongStateOf(0L) }
     var frameAspect by remember { mutableFloatStateOf(0.75f) }
+    var uiLandscape by remember { mutableStateOf(false) }
+    val activity = ctx as? Activity
     var showStrength by remember { mutableStateOf(false) }
     var showTune by remember { mutableStateOf(false) }
     var showManage by remember { mutableStateOf(false) }
@@ -89,6 +95,12 @@ fun CameraScreen(
         controller.setFlash(if (front) FlashSetting.OFF else flash)
     }
     LaunchedEffect(front) { controller.bind(owner, renderer.surfaceProvider, front) }
+    val wideFrame = false // screen stays portrait; wide frames are bands inside the portrait view
+    LaunchedEffect(wideFrame) {
+        activity?.requestedOrientation =
+            if (wideFrame) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    }
+    DisposableEffect(Unit) { onDispose { activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT } }
     LaunchedEffect(focusPoint) { if (focusPoint != null) { delay(900); focusPoint = null } }
     LaunchedEffect(recording) {
         while (recording) {
@@ -161,7 +173,7 @@ fun CameraScreen(
     fun takePhoto() {
         if (busy) return
         busy = true
-        val p = params; val s = strength; val fa = frameAspect
+        val p = params; val s = strength; val fa = frameAspect; val land = uiLandscape
         val quality = vm.settings.jpegQuality; val mirror = front && vm.settings.mirrorFront
         controller.capture(mirror) { result ->
             result.onSuccess { bmp ->
@@ -171,7 +183,7 @@ fun CameraScreen(
                         runCatching {
                             val processed = PhotoProcessor().process(bmp, p, s)
                             // A sideways shot is saved landscape, so the frame is turned with it.
-                            val target = if (processed.width > processed.height) 1f / fa else fa
+                            val target = if (land) fa else if (processed.width > processed.height) 1f / fa else fa
                             val r = cropRect(processed.width, processed.height, target)
                             out = if (r.w == processed.width && r.h == processed.height) processed
                             else Bitmap.createBitmap(processed, r.x, r.y, r.w, r.h).also { processed.recycle() }
@@ -198,16 +210,22 @@ fun CameraScreen(
     }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
+        val landscape = maxWidth > maxHeight
         val screenAspect = maxWidth / maxHeight
         val a = frame.aspect(screenAspect)
-        SideEffect { frameAspect = a }
-        val vfW = maxWidth
-        val vfH = maxWidth / a
+        val rotation = view.display?.rotation ?: Surface.ROTATION_0
+        SideEffect { frameAspect = a; uiLandscape = landscape; renderer.displayRotation = rotation }
+        val heightLimited = landscape && maxWidth / a > maxHeight
+        val vfW = if (heightLimited) maxHeight * a else maxWidth
+        val vfH = if (heightLimited) maxHeight else maxWidth / a
         val isFull = frame == Frame.FULL
 
         // Viewfinder, cropped to the chosen frame; the controls float over it.
         Box(
-            Modifier.fillMaxSize().padding(top = if (isFull) 0.dp else 88.dp, bottom = if (isFull) 0.dp else 260.dp),
+            Modifier.fillMaxSize().padding(
+                top = if (isFull || landscape) 0.dp else 88.dp,
+                bottom = if (isFull || landscape) 0.dp else 260.dp,
+            ),
             contentAlignment = Alignment.Center,
         ) {
             Box(Modifier.requiredSize(vfW, vfH)) {
@@ -237,6 +255,43 @@ fun CameraScreen(
             }
         }
 
+        if (landscape) {
+            Row(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(end = 120.dp).background(Color(0x66000000)), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(0.42f)) {
+                    TopBar(
+                        flash, showFlash = !front, grid = grid,
+                        onFlash = { flash = FlashSetting.values()[(flash.ordinal + 1) % 3] },
+                        onGrid = { grid = !grid }, onSettings = onOpenSettings,
+                    )
+                }
+                Box(Modifier.weight(0.58f)) { FrameSelector(frame, enabled = !recording) { frame = it } }
+            }
+            if (recording) RecTimer(elapsedSec, Modifier.align(Alignment.TopCenter).padding(top = 58.dp))
+            Column(
+                Modifier.align(Alignment.CenterEnd).padding(end = 8.dp).clip(RoundedCornerShape(24.dp)).background(Color(0x66000000)).padding(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ModeSwitchVertical(videoMode, enabled = !recording) { videoMode = it }
+                ShutterColumn(
+                    lastPhoto, busy, videoMode, recording,
+                    onGallery = onOpenGallery, onShutter = ::onShutter, onFlip = { front = !front },
+                )
+            }
+            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(end = 120.dp).background(Color(0x66000000)), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (showStrength) {
+                    Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Strength ${(strength * 100).toInt()}%", color = Color.White)
+                        Slider(strength, vm::setStrength, Modifier.weight(1f).padding(start = 12.dp))
+                    }
+                }
+                FilterStrip(
+                    entries, params.name,
+                    onSelect = { name -> if (name == params.name) showStrength = !showStrength else { vm.select(name); showStrength = false } },
+                    onTune = { showTune = true }, onManage = { showManage = true },
+                )
+            }
+            ZoomBar(zoom, front, onZoom = controller::setZoomRatio, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 64.dp, end = 120.dp))
+        } else {
         Column(Modifier.align(Alignment.TopCenter).background(Color(0x66000000))) {
             TopBar(
                 flash, showFlash = !front, grid = grid,
@@ -265,6 +320,7 @@ fun CameraScreen(
                 lastPhoto, busy, videoMode, recording,
                 onGallery = onOpenGallery, onShutter = ::onShutter, onFlip = { front = !front },
             )
+        }
         }
     }
     if (showTune) TuneSheet(vm) { showTune = false }
