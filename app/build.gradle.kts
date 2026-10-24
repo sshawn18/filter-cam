@@ -24,6 +24,7 @@ dependencies {
     implementation("androidx.camera:camera-core:$camerax")
     implementation("androidx.camera:camera-camera2:$camerax")
     implementation("androidx.camera:camera-lifecycle:$camerax")
+    implementation("androidx.camera:camera-extensions:$camerax")
     implementation(platform("androidx.compose:compose-bom:2024.09.00"))
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")

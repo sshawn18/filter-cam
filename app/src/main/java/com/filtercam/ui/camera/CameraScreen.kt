@@ -72,6 +72,7 @@ fun CameraScreen(
     var grid by remember { mutableStateOf(vm.settings.gridDefault) }
     var frame by remember { mutableStateOf(Frame.R3_4) }
     var videoMode by remember { mutableStateOf(false) }
+    var night by remember { mutableStateOf(false) }
     var recording by remember { mutableStateOf(false) }
     var elapsedSec by remember { mutableIntStateOf(0) }
     var recStartMs by remember { mutableLongStateOf(0L) }
@@ -91,10 +92,10 @@ fun CameraScreen(
     renderer.params = params
     renderer.strength = strength
     SideEffect {
-        renderer.onSurfaceRecreated = { controller.bind(owner, renderer.surfaceProvider, front) }
+        renderer.onSurfaceRecreated = { controller.bind(owner, renderer.surfaceProvider, front, useExtensions = night && !videoMode) }
         controller.setFlash(if (front) FlashSetting.OFF else flash)
     }
-    LaunchedEffect(front) { controller.bind(owner, renderer.surfaceProvider, front) }
+    LaunchedEffect(front, videoMode, night) { controller.bind(owner, renderer.surfaceProvider, front, useExtensions = night && !videoMode) }
     LaunchedEffect(focusPoint) { if (focusPoint != null) { delay(900); focusPoint = null } }
     LaunchedEffect(recording) {
         while (recording) {
@@ -260,9 +261,10 @@ fun CameraScreen(
 
         Column(Modifier.align(Alignment.TopCenter).background(Color(0x66000000))) {
             TopBar(
-                flash, showFlash = !front, grid = grid, frame = frame, frameEnabled = !recording,
+                flash, showFlash = !front, grid = grid, night = night, showNight = !videoMode, frame = frame, frameEnabled = !recording,
                 onFlash = { flash = FlashSetting.values()[(flash.ordinal + 1) % 3] },
-                onGrid = { grid = !grid }, onFrame = { frame = it }, onSettings = onOpenSettings,
+                onGrid = { grid = !grid }, onNight = { night = !night; vm.message(if (night) "Night mode on: hold still for a couple of seconds" else "Night mode off") },
+                onFrame = { frame = it }, onSettings = onOpenSettings,
             )
         }
         if (recording) RecTimer(elapsedSec, Modifier.align(Alignment.TopCenter).padding(top = 60.dp))

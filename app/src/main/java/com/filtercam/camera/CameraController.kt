@@ -21,10 +21,15 @@ import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import android.util.Size
 import android.view.Display
+import android.hardware.camera2.CaptureRequest
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.DisplayOrientedMeteringPointFactory
 import androidx.camera.core.FocusMeteringAction
 import com.filtercam.settings.FlashSetting
+import androidx.camera.extensions.ExtensionMode
+import androidx.camera.extensions.ExtensionsManager
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
@@ -43,7 +48,8 @@ class CameraController(private val context: Context) {
         .setResolutionStrategy(ResolutionStrategy(Size(1920, 1440), ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER))
         .build()
     /** Best-quality photo capture. highRes allows the sensor high-resolution mode (up to about 50 MP); otherwise capped at 12 MP. */
-    private fun buildCapture(highRes: Boolean): ImageCapture {
+    @androidx.annotation.OptIn(ExperimentalCamera2Interop::class)
+    private fun buildCapture(highRes: Boolean, hq: Boolean = true): ImageCapture {
         val rs = ResolutionSelector.Builder()
             .setAspectRatioStrategy(AspectRatioStrategy(AspectRatio.RATIO_4_3, AspectRatioStrategy.FALLBACK_RULE_AUTO))
             .setResolutionStrategy(
@@ -51,11 +57,17 @@ class CameraController(private val context: Context) {
             )
             .apply { if (highRes) setAllowedResolutionMode(ResolutionSelector.PREFER_HIGHER_RESOLUTION_OVER_CAPTURE_RATE) }
             .build()
-        return ImageCapture.Builder()
+        val builder = ImageCapture.Builder()
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
             .setJpegQuality(100)
             .setResolutionSelector(rs)
-            .build()
+        if (hq) {
+            // Ask the camera for its best noise reduction and sharpening on the saved photo.
+            Camera2Interop.Extender(builder)
+                .setCaptureRequestOption(CaptureRequest.NOISE_REDUCTION_MODE, CaptureRequest.NOISE_REDUCTION_MODE_HIGH_QUALITY)
+                .setCaptureRequestOption(CaptureRequest.EDGE_MODE, CaptureRequest.EDGE_MODE_HIGH_QUALITY)
+        }
+        return builder.build()
     }
 
     private var imageCapture = buildCapture(highRes = true)
@@ -65,31 +77,64 @@ class CameraController(private val context: Context) {
     private val captureExecutor = Executors.newSingleThreadExecutor()
     @Volatile private var camera: Camera? = null
 
-    fun bind(owner: LifecycleOwner, provider: Preview.SurfaceProvider, front: Boolean) {
+    private var highResFailed = false
+
+    /**
+     * Binds preview and photo capture. With useExtensions the phone HDR/Night engine (multi-frame processing) is used
+     * when available, which gives much cleaner photos in dim light; otherwise a plain single-frame capture is used.
+     */
+    fun bind(owner: LifecycleOwner, provider: Preview.SurfaceProvider, front: Boolean, useExtensions: Boolean = false) {
         val future = ProcessCameraProvider.getInstance(context)
         future.addListener({
             val cp = future.get()
-            fun bindAll(): Camera {
+            val base = if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
+
+            fun bindWith(cameraSelector: CameraSelector, ext: Boolean): Camera {
+                imageCapture = buildCapture(highRes = !ext && !highResFailed, hq = !ext).also { it.targetRotation = targetRotation; it.flashMode = flashMode }
                 val preview = Preview.Builder().setResolutionSelector(selector).build()
                 preview.setSurfaceProvider(provider)
                 cp.unbindAll()
-                return cp.bindToLifecycle(
-                    owner,
-                    if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA,
-                    preview, imageCapture,
-                )
+                return cp.bindToLifecycle(owner, cameraSelector, preview, imageCapture)
             }
-            val cam = try {
-                bindAll()
-            } catch (e: IllegalArgumentException) {
-                // High-resolution capture is not supported together with this preview: fall back to 12 MP.
-                Log.w("FilterCam", "High-res capture unavailable, using 12 MP", e)
-                imageCapture = buildCapture(highRes = false).also { it.targetRotation = targetRotation; it.flashMode = flashMode }
-                bindAll()
+
+            fun attach(cam: Camera) {
+                camera = cam
+                Log.i("FilterCam", "Photo capture resolution: ${imageCapture.resolutionInfo?.resolution}")
+                cam.cameraInfo.zoomState.observe(owner) { z -> _zoom.value = ZoomInfo(z.zoomRatio, z.minZoomRatio, z.maxZoomRatio) }
             }
-            Log.i("FilterCam", "Photo capture resolution: ${imageCapture.resolutionInfo?.resolution}")
-            camera = cam
-            cam.cameraInfo.zoomState.observe(owner) { z -> _zoom.value = ZoomInfo(z.zoomRatio, z.minZoomRatio, z.maxZoomRatio) }
+
+            fun plain() {
+                val cam = try {
+                    bindWith(base, false)
+                } catch (e: IllegalArgumentException) {
+                    // High-resolution capture is not supported together with this preview: fall back to 12 MP.
+                    Log.w("FilterCam", "High-res capture unavailable, using 12 MP", e)
+                    highResFailed = true
+                    bindWith(base, false)
+                }
+                attach(cam)
+            }
+
+            if (!useExtensions) { plain(); return@addListener }
+            val extFuture = ExtensionsManager.getInstanceAsync(context, cp)
+            extFuture.addListener({
+                val em = runCatching { extFuture.get() }.getOrNull()
+                val mode = em?.let { m ->
+                    listOf(ExtensionMode.AUTO, ExtensionMode.HDR, ExtensionMode.NIGHT).firstOrNull { m.isExtensionAvailable(base, it) }
+                }
+                if (em == null || mode == null) {
+                    Log.i("FilterCam", "No camera extensions available, using plain capture")
+                    plain()
+                    return@addListener
+                }
+                val cam = try {
+                    bindWith(em.getExtensionEnabledCameraSelector(base, mode), true).also { Log.i("FilterCam", "Extension mode in use: $mode") }
+                } catch (e: Exception) {
+                    Log.w("FilterCam", "Extension bind failed, using plain capture", e)
+                    null
+                }
+                if (cam != null) attach(cam) else plain()
+            }, ContextCompat.getMainExecutor(context))
         }, ContextCompat.getMainExecutor(context))
     }
 
