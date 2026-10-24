@@ -1,0 +1,18 @@
+{
+  "name": "Edgerunners",
+  "exposure": 0.45,
+  "temperature": -0.2,
+  "tint": 0.2,
+  "contrast": 0.9,
+  "blackLift": 0.1,
+  "shadowColor": [0.35, 0.3, 0.7],
+  "shadowAmount": 0.6,
+  "highlightColor": [1.0, 0.95, 0.95],
+  "highlightAmount": 0.25,
+  "saturation": 0.9,
+  "greenDeepen": 0.0,
+  "skinProtect": 0.6,
+  "halation": 0.95,
+  "grain": 0.3,
+  "vignette": 0.15
+}

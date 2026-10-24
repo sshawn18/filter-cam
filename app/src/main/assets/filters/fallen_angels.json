@@ -1,0 +1,18 @@
+{
+  "name": "Fallen Angels",
+  "exposure": -0.2,
+  "temperature": -0.25,
+  "tint": -0.45,
+  "contrast": 1.35,
+  "blackLift": 0.04,
+  "shadowColor": [0.0, 0.35, 0.5],
+  "shadowAmount": 0.7,
+  "highlightColor": [0.35, 1.0, 0.7],
+  "highlightAmount": 0.5,
+  "saturation": 1.3,
+  "greenDeepen": 0.25,
+  "skinProtect": 0.5,
+  "halation": 0.8,
+  "grain": 0.55,
+  "vignette": 0.5
+}
