@@ -9,7 +9,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.filtercam.filter.FilterParams
 import com.filtercam.gl.PhotoProcessor
 import org.junit.Assert.assertTrue
-import org.junit.Assume
 import org.junit.Test
 import java.io.File
 import java.io.IOException
@@ -24,7 +23,7 @@ import java.io.IOException
  *     .\gradlew.bat connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.record=true"
  *     adb pull /sdcard/Android/data/com.filtercam/files/jade_golden.png app\src\androidTest\assets\jade_golden.png
  *
- * Until the golden is recorded, the comparison is skipped, not passed.
+ * If the golden is missing the test FAILS (it never silently skips): record it as above and commit the PNG.
  *
  * A sanity check runs in both modes: the output must differ noticeably from the input, so a
  * pass-through shader can never be recorded as the golden or pass the comparison.
@@ -75,7 +74,7 @@ class PhotoProcessorGoldenTest {
         } catch (e: IOException) {
             false
         }
-        Assume.assumeTrue("jade_golden.png not recorded yet (record with -e record true, see plan Task 8)", goldenExists)
+        assertTrue("jade_golden.png is missing from app/src/androidTest/assets: record it with -e record true (see the class comment) and commit it", goldenExists)
         val golden = BitmapFactory.decodeStream(inst.context.assets.open("jade_golden.png"))
         val meanDiff = meanAbsDiff(out, golden)
         assertTrue("mean abs diff $meanDiff > 2.0", meanDiff <= 2.0)

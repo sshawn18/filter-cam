@@ -16,11 +16,16 @@ import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.view.Surface
 import java.nio.ByteBuffer
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Records the filtered frames that the GL renderer draws into [start]'s returned Surface, plus microphone audio,
  * into Movies/FilterCam via MediaStore. Frame and audio timestamps both come from System.nanoTime().
  * start() and stop() may be called from any thread; stop() blocks until the file is finalized, so call it off the main thread.
+ *
+ * Shutdown order (no thread outlives stop()): signal end of stream, join the worker threads (interrupting any that
+ * are slow), only then close the muxer and release the codecs. Workers use their own references and treat a stopped
+ * codec as "finish quietly", so a late worker can never crash on a released codec or write to a stopped muxer.
  */
 class VideoRecorder(private val context: Context) {
     private var uri: Uri? = null
@@ -31,11 +36,12 @@ class VideoRecorder(private val context: Context) {
     private var inputSurface: Surface? = null
     private var audioEnc: MediaCodec? = null
     private var audioRec: AudioRecord? = null
-    private var videoThread: Thread? = null
-    private var audioThread: Thread? = null
+    @Volatile private var videoThread: Thread? = null
+    @Volatile private var audioThread: Thread? = null
+    private val stopping = AtomicBoolean(false)
     @Volatile private var stopRequested = false
     @Volatile private var stopAtMs = 0L
-    private var baseUs = 0L
+    @Volatile private var baseUs = 0L
     @Volatile var isRecording = false
         private set
     @Volatile var hasAudio = false
@@ -45,6 +51,7 @@ class VideoRecorder(private val context: Context) {
     @SuppressLint("MissingPermission")
     fun start(width: Int, height: Int, withAudio: Boolean, orientationHint: Int = 0): Surface {
         check(!isRecording) { "Already recording" }
+        check(!stopping.get()) { "Still finishing the previous recording" }
         val resolver = context.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, "FilterCam_${System.currentTimeMillis()}.mp4")
@@ -56,8 +63,9 @@ class VideoRecorder(private val context: Context) {
         uri = u
         try {
             pfd = checkNotNull(resolver.openFileDescriptor(u, "rw"))
-            muxer = MediaMuxer(pfd!!.fileDescriptor, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-            muxer!!.setOrientationHint(orientationHint)
+            val mx = MediaMuxer(pfd!!.fileDescriptor, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            muxer = mx
+            mx.setOrientationHint(orientationHint)
 
             val vFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
                 setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
@@ -72,18 +80,20 @@ class VideoRecorder(private val context: Context) {
             inputSurface = inSurface
             venc.start()
 
-            var audioOk = false
-            if (withAudio) {
-                audioOk = runCatching { setupAudio() }.getOrDefault(false)
-            }
+            val audioOk = withAudio && runCatching { setupAudio() }.getOrDefault(false)
             hasAudio = audioOk
-            sync = MuxSync(muxer!!, if (audioOk) 2 else 1)
+            val mux = MuxSync(mx, if (audioOk) 2 else 1)
+            sync = mux
 
             baseUs = System.nanoTime() / 1000
             stopRequested = false
             isRecording = true
-            videoThread = Thread({ drain(venc, EncoderKind.VIDEO) }, "rec-video").also { it.start() }
-            if (audioOk) audioThread = Thread({ audioLoop() }, "rec-audio").also { it.start() }
+            videoThread = Thread({ drain(venc, mux) }, "rec-video").also { it.start() }
+            if (audioOk) {
+                val rec = audioRec!!
+                val aenc = audioEnc!!
+                audioThread = Thread({ audioLoop(rec, aenc, mux) }, "rec-audio").also { it.start() }
+            }
             return inSurface
         } catch (t: Throwable) {
             cleanupFailed()
@@ -111,84 +121,108 @@ class VideoRecorder(private val context: Context) {
         return true
     }
 
-    private enum class EncoderKind { VIDEO, AUDIO }
+    /** Waits for [t]; if it does not finish in time it is interrupted and waited for again, so no thread outlives stop(). */
+    private fun joinOrInterrupt(t: Thread?, ms: Long) {
+        if (t == null) return
+        try {
+            t.join(ms)
+            if (t.isAlive) { t.interrupt(); t.join(2000) }
+        } catch (e: InterruptedException) {
+            t.interrupt()
+        }
+    }
 
-    /** Pulls encoded buffers into the muxer until the encoder reports end-of-stream (or we give up after stop). */
-    private fun drain(enc: MediaCodec, kind: EncoderKind, untilEos: Boolean = true) {
+    /** Pulls encoded buffers into the muxer until end-of-stream, an interrupt, or giving up after stop. Uses only its arguments. */
+    private fun drain(enc: MediaCodec, mux: MuxSync) {
         val info = MediaCodec.BufferInfo()
         var track = -1
         var lastPts = -1L
-        while (true) {
-            val i = enc.dequeueOutputBuffer(info, 10_000)
-            when {
-                i == MediaCodec.INFO_TRY_AGAIN_LATER -> {
-                    if (stopRequested && System.currentTimeMillis() - stopAtMs > 4000) return
-                    if (!untilEos) return
-                }
-                i == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> track = sync!!.addTrack(enc.outputFormat)
-                i >= 0 -> {
-                    val buf = enc.getOutputBuffer(i)
-                    if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) info.size = 0
-                    if (buf != null && info.size > 0 && track >= 0) {
-                        buf.position(info.offset); buf.limit(info.offset + info.size)
-                        var pts = (info.presentationTimeUs - baseUs).coerceAtLeast(0)
-                        if (pts <= lastPts) pts = lastPts + 1
-                        lastPts = pts
-                        info.presentationTimeUs = pts
-                        sync!!.write(track, buf, info)
+        try {
+            while (!Thread.currentThread().isInterrupted) {
+                val i = enc.dequeueOutputBuffer(info, 10_000)
+                when {
+                    i == MediaCodec.INFO_TRY_AGAIN_LATER -> {
+                        if (stopRequested && System.currentTimeMillis() - stopAtMs > 4000) return
                     }
-                    val eos = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
-                    enc.releaseOutputBuffer(i, false)
-                    if (eos) return
+                    i == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> track = mux.addTrack(enc.outputFormat)
+                    i >= 0 -> {
+                        val buf = enc.getOutputBuffer(i)
+                        if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) info.size = 0
+                        if (buf != null && info.size > 0 && track >= 0) {
+                            buf.position(info.offset); buf.limit(info.offset + info.size)
+                            var pts = (info.presentationTimeUs - baseUs).coerceAtLeast(0)
+                            if (pts <= lastPts) pts = lastPts + 1
+                            lastPts = pts
+                            info.presentationTimeUs = pts
+                            mux.write(track, buf, info)
+                        }
+                        val eos = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
+                        enc.releaseOutputBuffer(i, false)
+                        if (eos) return
+                    }
                 }
             }
+        } catch (e: IllegalStateException) {
+            // The codec was stopped underneath us: finish quietly.
         }
     }
 
-    private fun audioLoop() {
-        val rec = audioRec!!
-        val enc = audioEnc!!
+    private fun audioLoop(rec: AudioRecord, enc: MediaCodec, mux: MuxSync) {
         val buf = ByteArray(4096)
-        rec.startRecording()
-        val drainer = Thread({ drain(enc, EncoderKind.AUDIO) }, "rec-audio-drain").also { it.start() }
-        while (!stopRequested) {
-            val n = rec.read(buf, 0, buf.size)
-            if (n <= 0) continue
-            val nowUs = System.nanoTime() / 1000
-            val ptsUs = nowUs - (n / 2L) * 1_000_000L / 44100L
-            val idx = enc.dequeueInputBuffer(10_000)
-            if (idx >= 0) {
-                val ib: ByteBuffer = enc.getInputBuffer(idx)!!
-                ib.clear(); ib.put(buf, 0, n)
-                enc.queueInputBuffer(idx, 0, n, ptsUs, 0)
+        var drainer: Thread? = null
+        try {
+            rec.startRecording()
+            drainer = Thread({ drain(enc, mux) }, "rec-audio-drain").also { it.start() }
+            while (!stopRequested && !Thread.currentThread().isInterrupted) {
+                val n = rec.read(buf, 0, buf.size)
+                if (n <= 0) continue
+                val nowUs = System.nanoTime() / 1000
+                val ptsUs = nowUs - (n / 2L) * 1_000_000L / 44100L
+                val idx = enc.dequeueInputBuffer(10_000)
+                if (idx >= 0) {
+                    val ib: ByteBuffer = enc.getInputBuffer(idx) ?: continue
+                    ib.clear(); ib.put(buf, 0, n)
+                    enc.queueInputBuffer(idx, 0, n, ptsUs, 0)
+                }
             }
+            runCatching { rec.stop() }
+            val idx = enc.dequeueInputBuffer(50_000)
+            if (idx >= 0) enc.queueInputBuffer(idx, 0, 0, System.nanoTime() / 1000, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+        } catch (e: IllegalStateException) {
+            // The recorder or codec was released underneath us: finish quietly.
+        } finally {
+            joinOrInterrupt(drainer, 5000)
         }
-        rec.stop()
-        val idx = enc.dequeueInputBuffer(50_000)
-        if (idx >= 0) enc.queueInputBuffer(idx, 0, 0, System.nanoTime() / 1000, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-        drainer.join(5000)
     }
 
-    /** Ends the recording and finalizes the file. Call after the renderer stopped feeding frames. Blocks. */
+    /** Ends the recording and finalizes the file. Call after the renderer stopped feeding frames. Blocks; safe against a second call. */
     fun stop(): Result<Uri> {
         if (!isRecording) return Result.failure(IllegalStateException("Not recording"))
-        stopAtMs = System.currentTimeMillis()
-        stopRequested = true
-        isRecording = false
-        runCatching { videoEnc?.signalEndOfInputStream() }
-        videoThread?.join(6000)
-        audioThread?.join(6000)
-        val started = sync?.started == true
-        runCatching { if (started) muxer?.stop() }
-        release()
-        val u = uri
-        return if (started && u != null) {
-            val values = ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }
-            context.contentResolver.update(u, values, null, null)
-            Result.success(u)
-        } else {
-            u?.let { context.contentResolver.delete(it, null, null) }
-            Result.failure(IllegalStateException("No video was recorded"))
+        if (!stopping.compareAndSet(false, true)) return Result.failure(IllegalStateException("Already stopping"))
+        try {
+            stopAtMs = System.currentTimeMillis()
+            stopRequested = true
+            isRecording = false
+            runCatching { videoEnc?.signalEndOfInputStream() }
+            val vt = videoThread
+            val at = audioThread
+            val mux = sync
+            joinOrInterrupt(vt, 6000)
+            joinOrInterrupt(at, 8000)
+            // Both threads are finished (or were interrupted and joined): nothing can touch the muxer or codecs any more.
+            val started = mux?.finish() == true
+            release()
+            val u = uri
+            return if (started && u != null) {
+                val values = ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }
+                context.contentResolver.update(u, values, null, null)
+                Result.success(u)
+            } else {
+                u?.let { context.contentResolver.delete(it, null, null) }
+                Result.failure(IllegalStateException("No video was recorded"))
+            }
+        } finally {
+            stopping.set(false)
         }
     }
 
@@ -217,9 +251,11 @@ class VideoRecorder(private val context: Context) {
         private var added = 0
         @Volatile var started = false
             private set
+        private var closed = false
         private val queue = ArrayList<Sample>()
 
         @Synchronized fun addTrack(format: MediaFormat): Int {
+            if (closed) return -1
             val t = muxer.addTrack(format)
             added++
             if (added == expected) {
@@ -232,6 +268,7 @@ class VideoRecorder(private val context: Context) {
         }
 
         @Synchronized fun write(track: Int, buf: ByteBuffer, info: MediaCodec.BufferInfo) {
+            if (closed) return
             if (started) {
                 muxer.writeSampleData(track, buf, info)
             } else {
@@ -240,6 +277,13 @@ class VideoRecorder(private val context: Context) {
                 val copy = MediaCodec.BufferInfo().also { it.set(0, info.size, info.presentationTimeUs, info.flags) }
                 queue += Sample(track, bytes, copy)
             }
+        }
+
+        /** Stops the muxer (if it ever started) and refuses further writes. Returns true when a file was finalized. */
+        @Synchronized fun finish(): Boolean {
+            closed = true
+            queue.clear()
+            return started && runCatching { muxer.stop() }.isSuccess
         }
     }
 }

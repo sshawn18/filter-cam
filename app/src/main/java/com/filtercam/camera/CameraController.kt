@@ -85,10 +85,13 @@ class CameraController(private val context: Context) {
     private var highResFailed = false
 
     /**
-     * Binds preview and photo capture. With useExtensions the phone HDR/Night engine (multi-frame processing) is used
-     * when available, which gives much cleaner photos in dim light; otherwise a plain single-frame capture is used.
+     * Binds preview and photo capture. With night = true the phone Night engine (multi-frame) is requested explicitly;
+     * AUTO and HDR are never substituted. onNightResult reports (on the main thread) whether Night is really active.
      */
-    fun bind(owner: LifecycleOwner, provider: Preview.SurfaceProvider, front: Boolean, useExtensions: Boolean = false) {
+    fun bind(
+        owner: LifecycleOwner, provider: Preview.SurfaceProvider, front: Boolean,
+        night: Boolean = false, onNightResult: ((Boolean) -> Unit)? = null,
+    ) {
         val future = ProcessCameraProvider.getInstance(context)
         future.addListener({
             val cp = future.get()
@@ -130,25 +133,23 @@ class CameraController(private val context: Context) {
                 attach(cam)
             }
 
-            if (!useExtensions) { plain(); return@addListener }
+            if (!night) { plain(); return@addListener }
             val extFuture = ExtensionsManager.getInstanceAsync(context, cp)
             extFuture.addListener({
                 val em = runCatching { extFuture.get() }.getOrNull()
-                val mode = em?.let { m ->
-                    listOf(ExtensionMode.AUTO, ExtensionMode.HDR, ExtensionMode.NIGHT).firstOrNull { m.isExtensionAvailable(base, it) }
-                }
-                if (em == null || mode == null) {
-                    Log.i("FilterCam", "No camera extensions available, using plain capture")
+                if (em == null || !em.isExtensionAvailable(base, ExtensionMode.NIGHT)) {
+                    Log.i("FilterCam", "Night extension not available, using plain capture")
                     plain()
+                    onNightResult?.invoke(false)
                     return@addListener
                 }
                 val cam = try {
-                    bindWith(em.getExtensionEnabledCameraSelector(base, mode), true).also { Log.i("FilterCam", "Extension mode in use: $mode") }
+                    bindWith(em.getExtensionEnabledCameraSelector(base, ExtensionMode.NIGHT), true).also { Log.i("FilterCam", "Night extension in use") }
                 } catch (e: Exception) {
-                    Log.w("FilterCam", "Extension bind failed, using plain capture", e)
+                    Log.w("FilterCam", "Night extension bind failed, using plain capture", e)
                     null
                 }
-                if (cam != null) attach(cam) else plain()
+                if (cam != null) { attach(cam); onNightResult?.invoke(true) } else { plain(); onNightResult?.invoke(false) }
             }, ContextCompat.getMainExecutor(context))
         }, ContextCompat.getMainExecutor(context))
     }
@@ -206,14 +207,24 @@ class CameraController(private val context: Context) {
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
                     val result = runCatching {
-                        // Decode downsampled so a 50 MP capture never needs more than about 12 MP of memory.
+                        // Keep full resolution whenever memory allows; only scale down (smoothly, not just in halves) above the budget.
                         val buf = image.planes[0].buffer
                         val bytes = ByteArray(buf.remaining()).also { buf.get(it) }
                         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-                        var sample = 1
-                        while ((bounds.outWidth / sample).toLong() * (bounds.outHeight / sample) > 13_500_000L) sample *= 2
-                        val raw = checkNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample }))
+                        val pixels = bounds.outWidth.toLong() * bounds.outHeight
+                        // ARGB_8888 is 4 bytes per pixel and the filter path holds a few copies, so budget a twelfth of the heap (max 24 MP).
+                        val budget = minOf(24_000_000L, Runtime.getRuntime().maxMemory() / 12)
+                        val opts = BitmapFactory.Options()
+                        if (pixels > budget) {
+                            val ratio = Math.sqrt(pixels.toDouble() / budget)
+                            var sample = 1
+                            while (sample * 2 <= ratio) sample *= 2
+                            opts.inSampleSize = sample
+                            val rest = ratio / sample
+                            if (rest > 1.01) { opts.inScaled = true; opts.inDensity = 1000; opts.inTargetDensity = (1000 / rest).toInt() }
+                        }
+                        val raw = checkNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts))
                         val m = Matrix().apply { postRotate(image.imageInfo.rotationDegrees.toFloat()); if (mirror) postScale(-1f, 1f) }
                         val rotated = Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, m, true)
                         if (rotated !== raw) raw.recycle()

@@ -91,6 +91,9 @@ fun CameraScreen(
     val main = remember { Handler(Looper.getMainLooper()) }
     val zoom by controller.zoom.collectAsState()
     val exposure by controller.exposure.collectAsState()
+    val nightResult: (Boolean) -> Unit = { ok ->
+        if (!ok) { night = false; vm.message("Night mode is not available on this camera") }
+    }
 
     // Unfiltered photos on the main lens (about 1x to 2x) get a gentle detail boost; other lenses stay untouched.
     val mainLens = !front && zoom.ratio in 0.95f..2.95f
@@ -101,10 +104,10 @@ fun CameraScreen(
     renderer.params = effectiveParams
     renderer.strength = strength
     SideEffect {
-        renderer.onSurfaceRecreated = { controller.bind(owner, renderer.surfaceProvider, front, useExtensions = night && !videoMode) }
+        renderer.onSurfaceRecreated = { controller.bind(owner, renderer.surfaceProvider, front, night = night && !videoMode, onNightResult = nightResult) }
         controller.setFlash(if (front) FlashSetting.OFF else flash)
     }
-    LaunchedEffect(front, videoMode, night) { controller.bind(owner, renderer.surfaceProvider, front, useExtensions = night && !videoMode) }
+    LaunchedEffect(front, videoMode, night) { controller.bind(owner, renderer.surfaceProvider, front, night = night && !videoMode, onNightResult = nightResult) }
     LaunchedEffect(focusPoint) { if (focusPoint != null) { delay(900); focusPoint = null } }
     LaunchedEffect(recording) {
         while (recording) {
