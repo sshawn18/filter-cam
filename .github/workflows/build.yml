@@ -25,10 +25,10 @@ jobs:
           KS: ${{ secrets.DEBUG_KEYSTORE_B64 }}
         run: |
           if [ -n "$KS" ]; then
-            mkdir -p ~/.android
-            echo "$KS" | tr -d '[:space:]' | base64 -d > ~/.android/debug.keystore
-            ls -l ~/.android/debug.keystore
-            keytool -list -keystore ~/.android/debug.keystore -storepass android | grep -i "fingerprint\|error" || echo "keystore could not be read"
+            echo "DEBUG_KEYSTORE_PATH=$GITHUB_WORKSPACE/ci-debug.keystore" >> "$GITHUB_ENV"
+            echo "$KS" | tr -d '[:space:]' | base64 -d > "$GITHUB_WORKSPACE/ci-debug.keystore"
+            ls -l "$GITHUB_WORKSPACE/ci-debug.keystore"
+            keytool -list -keystore "$GITHUB_WORKSPACE/ci-debug.keystore" -storepass android | grep -i "fingerprint\|error" || echo "keystore could not be read"
           else
             echo "No DEBUG_KEYSTORE_B64 secret set: building with a fresh debug key"
           fi

@@ -18,6 +18,12 @@ android {
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+    // CI points this at the owner's debug keystore so release APKs install over local builds.
+    signingConfigs.getByName("debug") {
+        System.getenv("DEBUG_KEYSTORE_PATH")?.takeIf { File(it).isFile }?.let {
+            storeFile = File(it); storePassword = "android"; keyAlias = "androiddebugkey"; keyPassword = "android"
+        }
+    }
 }
 dependencies {
     val camerax = "1.3.4"
