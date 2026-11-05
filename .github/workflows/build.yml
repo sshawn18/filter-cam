@@ -26,8 +26,7 @@ jobs:
         run: |
           if [ -n "$KS" ]; then
             mkdir -p ~/.android
-            echo "$KS" | tr -d ' 
-' | base64 -d > ~/.android/debug.keystore
+            echo "$KS" | tr -d '[:space:]' | base64 -d > ~/.android/debug.keystore
             ls -l ~/.android/debug.keystore
             keytool -list -keystore ~/.android/debug.keystore -storepass android | grep -i "fingerprint\|error" || echo "keystore could not be read"
           else
