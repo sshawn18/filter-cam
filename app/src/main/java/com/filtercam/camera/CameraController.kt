@@ -90,10 +90,11 @@ class CameraController(private val context: Context) {
      */
     fun bind(
         owner: LifecycleOwner, provider: Preview.SurfaceProvider, front: Boolean,
-        night: Boolean = false, onNightResult: ((Boolean) -> Unit)? = null,
+        night: Boolean = false, onNightResult: ((Boolean) -> Unit)? = null, onError: ((String) -> Unit)? = null,
     ) {
         val future = ProcessCameraProvider.getInstance(context)
         future.addListener({
+            try {
             val cp = future.get()
             val base = if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
 
@@ -136,6 +137,7 @@ class CameraController(private val context: Context) {
             if (!night) { plain(); return@addListener }
             val extFuture = ExtensionsManager.getInstanceAsync(context, cp)
             extFuture.addListener({
+                try {
                 val em = runCatching { extFuture.get() }.getOrNull()
                 if (em == null || !em.isExtensionAvailable(base, ExtensionMode.NIGHT)) {
                     Log.i("FilterCam", "Night extension not available, using plain capture")
@@ -150,9 +152,20 @@ class CameraController(private val context: Context) {
                     null
                 }
                 if (cam != null) { attach(cam); onNightResult?.invoke(true) } else { plain(); onNightResult?.invoke(false) }
+                } catch (e: Exception) {
+                    Log.e("FilterCam", "Camera could not start", e)
+                    onError?.invoke(e.message ?: "unknown error")
+                }
             }, ContextCompat.getMainExecutor(context))
+            } catch (e: Exception) {
+                Log.e("FilterCam", "Camera could not start", e)
+                onError?.invoke(e.message ?: "unknown error")
+            }
         }, ContextCompat.getMainExecutor(context))
     }
+
+    /** Frees the photo worker thread when the camera screen is left. */
+    fun release() { captureExecutor.shutdown() }
 
     /** Brightness: exposure compensation in camera steps (negative is darker). */
     fun setExposureIndex(index: Int) {
@@ -193,10 +206,18 @@ class CameraController(private val context: Context) {
     }
 
     /** x,y are view pixels inside a view of size w x h that shows the whole preview. */
-    fun focusAt(display: Display?, x: Float, y: Float, w: Float, h: Float) {
+    fun focusAt(display: Display?, x: Float, y: Float, w: Float, h: Float, frameAspect: Float) {
         val c = camera ?: return
         val d = display ?: return
-        val point = DisplayOrientedMeteringPointFactory(d, c.cameraInfo, w, h).createPoint(x, y)
+        // The viewfinder shows a centre crop of the camera image: convert the tap into full-image coordinates first.
+        val src = 3f / 4f
+        val sx = if (frameAspect < src) frameAspect / src else 1f
+        val sy = if (frameAspect > src) src / frameAspect else 1f
+        val fw = w / sx
+        val fh = h / sy
+        val fx = fw / 2f + (x - w / 2f)
+        val fy = fh / 2f + (y - h / 2f)
+        val point = DisplayOrientedMeteringPointFactory(d, c.cameraInfo, fw, fh).createPoint(fx, fy)
         c.cameraControl.startFocusAndMetering(FocusMeteringAction.Builder(point).build())
     }
 

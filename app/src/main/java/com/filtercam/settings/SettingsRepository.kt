@@ -34,6 +34,12 @@ class SettingsRepository(private val kv: KeyValueStore) {
         get() = kv.getBoolean("mirror", false); set(v) = kv.putBoolean("mirror", v)
     var detailBoost: Boolean
         get() = kv.getBoolean("detail", true); set(v) = kv.putBoolean("detail", v)
+    var lastFrame: String
+        get() = kv.getString("lastFrame", "R3_4") ?: "R3_4"; set(v) = kv.putString("lastFrame", v)
+    var lastVideoMode: Boolean
+        get() = kv.getBoolean("lastVideo", false); set(v) = kv.putBoolean("lastVideo", v)
+    var lastFront: Boolean
+        get() = kv.getBoolean("lastFront", false); set(v) = kv.putBoolean("lastFront", v)
     var lastFilter: String?
         get() = kv.getString("lastFilter", null); set(v) = kv.putString("lastFilter", v)
 }

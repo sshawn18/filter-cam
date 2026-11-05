@@ -66,25 +66,34 @@ class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
     // --- video recording: a second EGL window surface (the encoder's input) drawn after the screen ---
     private class RecTarget(val surface: Surface, val w: Int, val h: Int)
     @Volatile private var recTarget: RecTarget? = null
+    /** Set when drawing into the encoder fails; the screen watches it and stops the recording. */
+    @Volatile var recordingError: String? = null
     private var recEgl: EGLSurface = EGL14.EGL_NO_SURFACE
 
     /** Starts mirroring every drawn frame into [surface] (a MediaCodec input surface) at [w] x [h]. Any thread. */
     fun startRecording(surface: Surface, w: Int, h: Int) {
+        recordingError = null
         recTarget = RecTarget(surface, w, h)
         glView.requestRender()
     }
 
-    /** Stops mirroring; [onStopped] runs on the GL thread after the encoder surface is detached. */
+    /**
+     * Stops mirroring right away; [onStopped] runs exactly once, on the GL thread after the encoder surface is detached.
+     * If the GL thread is paused or gone it never would, so a short timeout runs it anyway (the surface dies with the context).
+     */
     fun stopRecording(onStopped: () -> Unit) {
+        recTarget = null
+        val done = java.util.concurrent.atomic.AtomicBoolean(false)
+        val finish = { if (done.compareAndSet(false, true)) onStopped() }
         glView.queueEvent {
-            recTarget = null
             if (recEgl != EGL14.EGL_NO_SURFACE) {
                 EGL14.eglDestroySurface(EGL14.eglGetCurrentDisplay(), recEgl)
                 recEgl = EGL14.EGL_NO_SURFACE
             }
-            onStopped()
+            finish()
         }
         glView.requestRender()
+        Handler(Looper.getMainLooper()).postDelayed({ finish() }, 400)
     }
 
     val surfaceProvider = Preview.SurfaceProvider { req ->
@@ -195,13 +204,13 @@ class GlFilterRenderer(private val context: Context) : GLSurfaceView.Renderer {
                 val n = IntArray(1)
                 EGL14.eglChooseConfig(dpy, intArrayOf(EGL14.EGL_CONFIG_ID, cfgId[0], EGL14.EGL_NONE), 0, cfgs, 0, 1, n, 0)
                 recEgl = EGL14.eglCreateWindowSurface(dpy, cfgs[0], target.surface, intArrayOf(EGL14.EGL_NONE), 0)
-                if (recEgl == EGL14.EGL_NO_SURFACE) { recTarget = null; return }
+                if (recEgl == EGL14.EGL_NO_SURFACE) { recordingError = "Could not connect the video encoder"; recTarget = null; return }
             }
             EGL14.eglMakeCurrent(dpy, recEgl, recEgl, ctx)
             GLES30.glViewport(0, 0, target.w, target.h)
             program?.draw(oesTex, texMatrix, params, strength, time, target.w.toFloat() / target.h)
             EGLExt.eglPresentationTimeANDROID(dpy, recEgl, System.nanoTime())
-            EGL14.eglSwapBuffers(dpy, recEgl)
+            if (!EGL14.eglSwapBuffers(dpy, recEgl)) { recordingError = "Video frames could not be delivered"; recTarget = null }
         } finally {
             EGL14.eglMakeCurrent(dpy, prevDraw, prevRead, ctx)
             GLES30.glViewport(0, 0, viewW, viewH)

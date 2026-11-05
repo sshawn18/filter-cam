@@ -67,12 +67,12 @@ fun CameraScreen(
     val params by vm.params.collectAsState()
     val strength by vm.strength.collectAsState()
     val entries by vm.entries.collectAsState()
-    var front by remember { mutableStateOf(false) }
+    var front by remember { mutableStateOf(vm.settings.lastFront) }
     var busy by remember { mutableStateOf(false) }
     var flash by remember { mutableStateOf(vm.settings.flashDefault) }
     var grid by remember { mutableStateOf(vm.settings.gridDefault) }
-    var frame by remember { mutableStateOf(Frame.R3_4) }
-    var videoMode by remember { mutableStateOf(false) }
+    var frame by remember { mutableStateOf(runCatching { Frame.valueOf(vm.settings.lastFrame) }.getOrDefault(Frame.R3_4)) }
+    var videoMode by remember { mutableStateOf(vm.settings.lastVideoMode) }
     var night by remember { mutableStateOf(false) }
     var showExposure by remember { mutableStateOf(false) }
     var recording by remember { mutableStateOf(false) }
@@ -94,6 +94,11 @@ fun CameraScreen(
     val nightResult: (Boolean) -> Unit = { ok ->
         if (!ok) { night = false; vm.message("Night mode is not available on this camera") }
     }
+    val cameraError: (String) -> Unit = { vm.message("Camera could not start: $it") }
+    // Remember the shooting setup between visits (never the recording state).
+    LaunchedEffect(front, frame, videoMode) {
+        vm.settings.lastFront = front; vm.settings.lastFrame = frame.name; vm.settings.lastVideoMode = videoMode
+    }
 
     // Unfiltered photos on the main lens (about 1x to 2x) get a gentle detail boost; other lenses stay untouched.
     val mainLens = !front && zoom.ratio in 0.95f..2.95f
@@ -104,25 +109,19 @@ fun CameraScreen(
     renderer.params = effectiveParams
     renderer.strength = strength
     SideEffect {
-        renderer.onSurfaceRecreated = { controller.bind(owner, renderer.surfaceProvider, front, night = night && !videoMode, onNightResult = nightResult) }
+        renderer.onSurfaceRecreated = { controller.bind(owner, renderer.surfaceProvider, front, night = night && !videoMode, onNightResult = nightResult, onError = cameraError) }
         controller.setFlash(if (front) FlashSetting.OFF else flash)
     }
-    LaunchedEffect(front, videoMode, night) { controller.bind(owner, renderer.surfaceProvider, front, night = night && !videoMode, onNightResult = nightResult) }
+    LaunchedEffect(front, videoMode, night) { controller.bind(owner, renderer.surfaceProvider, front, night = night && !videoMode, onNightResult = nightResult, onError = cameraError) }
     LaunchedEffect(focusPoint) { if (focusPoint != null) { delay(900); focusPoint = null } }
-    LaunchedEffect(recording) {
-        while (recording) {
-            elapsedSec = ((SystemClock.elapsedRealtime() - recStartMs) / 1000).toInt()
-            delay(250)
-        }
-    }
-
+    // Stops and finalizes exactly once, whatever the reason (button, leaving the app, leaving this screen, or a failure).
     fun stopRecording() {
         if (!recording) return
         recording = false
         busy = true
         renderer.stopRecording {
             worker.execute {
-                val r = recorder.stop()
+                val r = try { recorder.stop() } catch (t: Throwable) { Result.failure(t) }
                 main.post {
                     busy = false
                     r.onSuccess { vm.message("Video saved to Movies/FilterCam"); onPhotoSaved() }
@@ -132,11 +131,24 @@ fun CameraScreen(
         }
     }
 
+    LaunchedEffect(recording) {
+        while (recording) {
+            elapsedSec = ((SystemClock.elapsedRealtime() - recStartMs) / 1000).toInt()
+            val problem = renderer.recordingError ?: recorder.failure
+            if (problem != null) {
+                vm.message("Recording stopped: $problem")
+                stopRecording()
+                break
+            }
+            delay(250)
+        }
+    }
+
     fun startRecording(withAudio: Boolean) {
         val (w, h) = videoSize(frameAspect)
         runCatching {
             val surface = recorder.start(w, h, withAudio, videoOrientationHint(deviceRotation, front))
-            renderer.startRecording(surface, w, h)
+            renderer.startRecording(surface, recorder.outWidth, recorder.outHeight)
             recStartMs = SystemClock.elapsedRealtime()
             elapsedSec = 0
             recording = true
@@ -156,7 +168,7 @@ fun CameraScreen(
             }
         }
         owner.lifecycle.addObserver(observer)
-        onDispose { owner.lifecycle.removeObserver(observer); controller.unbind() }
+        onDispose { owner.lifecycle.removeObserver(observer); stopRecording(); controller.unbind(); controller.release() }
     }
 
     DisposableEffect(ctx) {
@@ -199,20 +211,22 @@ fun CameraScreen(
             result.onSuccess { bmp ->
                 worker.execute {
                     var out: Bitmap? = null
+                    var framed: Bitmap? = null
                     try {
                         runCatching {
-                            val processed = if (original) bmp else PhotoProcessor().process(bmp, p, s)
+                            // Crop first, then filter: the vignette and other effects then follow the framed picture, as in the preview.
                             // A sideways shot is saved landscape, so the frame is turned with it.
-                            val target = if (processed.width > processed.height) 1f / fa else fa
-                            val r = cropRect(processed.width, processed.height, target)
-                            out = if (r.w == processed.width && r.h == processed.height) processed
-                            else Bitmap.createBitmap(processed, r.x, r.y, r.w, r.h).also { processed.recycle() }
+                            val target = if (bmp.width > bmp.height) 1f / fa else fa
+                            val r = cropRect(bmp.width, bmp.height, target)
+                            val f = if (r.w == bmp.width && r.h == bmp.height) bmp else Bitmap.createBitmap(bmp, r.x, r.y, r.w, r.h)
+                            framed = f
+                            out = if (original) f else PhotoProcessor().process(f, p, s)
                             PhotoSaver.save(ctx, out!!, quality)
                         }
                             .onSuccess { main.post { vm.message("Saved to Pictures/FilterCam"); onPhotoSaved() } }
                             .onFailure { main.post { vm.message("Save failed: ${it.message}") } }
                     } finally {
-                        out?.recycle(); bmp.recycle(); main.post { busy = false }
+                        out?.recycle(); framed?.recycle(); bmp.recycle(); main.post { busy = false }
                     }
                 }
             }.onFailure { main.post { vm.message("Capture failed: ${it.message}"); busy = false } }
@@ -249,7 +263,7 @@ fun CameraScreen(
                     modifier = Modifier.fillMaxSize()
                         .pointerInput(Unit) {
                             detectTapGestures { o ->
-                                controller.focusAt(view.display, o.x, o.y, size.width.toFloat(), size.height.toFloat())
+                                controller.focusAt(view.display, o.x, o.y, size.width.toFloat(), size.height.toFloat(), frameAspect)
                                 focusPoint = o
                             }
                         }

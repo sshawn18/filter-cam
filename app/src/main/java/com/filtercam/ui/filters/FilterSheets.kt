@@ -106,13 +106,22 @@ fun ManageFiltersSheet(vm: FilterViewModel, onDismiss: () -> Unit) {
     var deleting by remember { mutableStateOf<FilterParams?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            val text = runCatching {
-                ctx.contentResolver.openInputStream(uri)!!.bufferedReader().use { r ->
-                    val buf = CharArray(200_001); val n = r.read(buf)
-                    if (n <= 0) "" else String(buf, 0, n)
-                }
-            }.getOrNull()
-            if (text == null) vm.message("Could not read that file") else vm.importFilter(text)
+            val main = android.os.Handler(android.os.Looper.getMainLooper())
+            Thread {
+                val text = runCatching {
+                    ctx.contentResolver.openInputStream(uri)!!.bufferedReader().use { r ->
+                        val sb = StringBuilder()
+                        val buf = CharArray(8192)
+                        while (sb.length <= 200_000) {
+                            val n = r.read(buf)
+                            if (n < 0) break
+                            sb.append(buf, 0, n)
+                        }
+                        sb.toString()
+                    }
+                }.getOrNull()
+                main.post { if (text == null) vm.message("Could not read that file") else vm.importFilter(text) }
+            }.start()
         }
     }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surface) {

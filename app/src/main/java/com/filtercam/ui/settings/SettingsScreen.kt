@@ -46,7 +46,7 @@ fun SettingsScreen(vm: FilterViewModel, onBack: () -> Unit) {
                     )
                 }
             }
-            Text("Photo quality: ${quality.toInt()}%", color = Color.White, modifier = Modifier.padding(top = 16.dp))
+            Text("Quality of filtered photos: ${quality.toInt()}%", color = Color.White, modifier = Modifier.padding(top = 16.dp))
             Slider(quality, { quality = it }, valueRange = 70f..100f, onValueChangeFinished = { s.jpegQuality = quality.toInt() })
             SwitchRow("Mirror front-camera photos", mirror) { mirror = it; s.mirrorFront = it }
             Text(

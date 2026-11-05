@@ -15,6 +15,10 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -173,7 +177,8 @@ fun ShutterRow(
                 video -> Modifier.size(64.dp).clip(CircleShape).background(Color(0xFFFF3B30))
                 else -> Modifier.size(64.dp).clip(CircleShape).background(if (busy) Color.Gray else Color.White)
             }
-            Box(inner.clickable(enabled = !busy || recording, onClick = onShutter))
+            val label = if (recording) "Stop recording" else if (video) "Start recording" else "Take photo"
+            Box(inner.semantics { contentDescription = label; role = Role.Button }.clickable(enabled = !busy || recording, onClick = onShutter))
         }
         IconButton(onClick = onFlip, enabled = !recording, modifier = Modifier.size(52.dp)) {
             Icon(
