@@ -1,0 +1,26 @@
+{
+  "name": "Cine Noir",
+  "exposure": -0.1,
+  "temperature": -0.15,
+  "contrast": 1.45,
+  "blackLift": 0.02,
+  "shadowColor": [
+    0.1,
+    0.13,
+    0.18
+  ],
+  "shadowAmount": 0.4,
+  "highlightColor": [
+    0.85,
+    0.9,
+    1.0
+  ],
+  "highlightAmount": 0.2,
+  "saturation": 0.08,
+  "clarity": 0.35,
+  "highlightRolloff": 0.3,
+  "halation": 0.2,
+  "halationThreshold": 0.7,
+  "grain": 0.6,
+  "vignette": 0.75
+}

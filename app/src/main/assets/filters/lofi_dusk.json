@@ -1,0 +1,31 @@
+{
+  "name": "Lofi Dusk",
+  "exposure": -0.1,
+  "temperature": 0.15,
+  "tint": 0.15,
+  "contrast": 1.0,
+  "blackLift": 0.1,
+  "shadowColor": [
+    0.25,
+    0.12,
+    0.38
+  ],
+  "shadowAmount": 0.55,
+  "highlightColor": [
+    1.0,
+    0.72,
+    0.55
+  ],
+  "highlightAmount": 0.4,
+  "saturation": 0.85,
+  "skinProtect": 0.7,
+  "halation": 0.4,
+  "halationColor": [
+    1.0,
+    0.65,
+    0.5
+  ],
+  "halationThreshold": 0.55,
+  "grain": 0.45,
+  "vignette": 0.45
+}

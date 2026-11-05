@@ -1,0 +1,32 @@
+{
+  "name": "Faded Polaroid",
+  "exposure": 0.1,
+  "temperature": 0.2,
+  "tint": 0.05,
+  "contrast": 0.88,
+  "blackLift": 0.14,
+  "shadowColor": [
+    0.3,
+    0.25,
+    0.18
+  ],
+  "shadowAmount": 0.4,
+  "highlightColor": [
+    1.0,
+    0.95,
+    0.8
+  ],
+  "highlightAmount": 0.3,
+  "saturation": 0.75,
+  "skinProtect": 0.8,
+  "highlightRolloff": 0.5,
+  "halation": 0.35,
+  "halationColor": [
+    1.0,
+    0.95,
+    0.8
+  ],
+  "halationThreshold": 0.6,
+  "grain": 0.5,
+  "vignette": 0.7
+}

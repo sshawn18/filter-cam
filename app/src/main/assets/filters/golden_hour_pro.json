@@ -1,0 +1,33 @@
+{
+  "name": "Golden Hour Pro",
+  "exposure": 0.05,
+  "temperature": 0.3,
+  "tint": 0.03,
+  "contrast": 1.1,
+  "blackLift": 0.03,
+  "shadowColor": [
+    0.2,
+    0.15,
+    0.2
+  ],
+  "shadowAmount": 0.25,
+  "highlightColor": [
+    1.0,
+    0.85,
+    0.6
+  ],
+  "highlightAmount": 0.35,
+  "saturation": 1.12,
+  "skinProtect": 0.85,
+  "highlightRolloff": 0.5,
+  "halation": 0.3,
+  "halationColor": [
+    1.0,
+    0.85,
+    0.6
+  ],
+  "halationThreshold": 0.65,
+  "clarity": 0.1,
+  "grain": 0.1,
+  "vignette": 0.25
+}

@@ -1,0 +1,33 @@
+{
+  "name": "Infrared Dream",
+  "exposure": 0.1,
+  "temperature": -0.2,
+  "tint": 0.45,
+  "contrast": 1.1,
+  "blackLift": 0.05,
+  "shadowColor": [
+    0.1,
+    0.1,
+    0.45
+  ],
+  "shadowAmount": 0.5,
+  "highlightColor": [
+    1.0,
+    0.85,
+    0.95
+  ],
+  "highlightAmount": 0.45,
+  "saturation": 1.15,
+  "greenDeepen": 0.0,
+  "cyanShift": 0.3,
+  "skinProtect": 0.5,
+  "halation": 0.6,
+  "halationColor": [
+    1.0,
+    0.8,
+    0.95
+  ],
+  "halationThreshold": 0.55,
+  "grain": 0.25,
+  "vignette": 0.3
+}

@@ -1,0 +1,32 @@
+{
+  "name": "Sakura Haze",
+  "exposure": 0.25,
+  "temperature": 0.05,
+  "tint": 0.3,
+  "contrast": 0.9,
+  "blackLift": 0.09,
+  "shadowColor": [
+    0.35,
+    0.15,
+    0.25
+  ],
+  "shadowAmount": 0.35,
+  "highlightColor": [
+    1.0,
+    0.85,
+    0.9
+  ],
+  "highlightAmount": 0.4,
+  "saturation": 0.95,
+  "skinProtect": 0.9,
+  "highlightRolloff": 0.4,
+  "halation": 0.75,
+  "halationColor": [
+    1.0,
+    0.7,
+    0.8
+  ],
+  "halationThreshold": 0.5,
+  "grain": 0.1,
+  "vignette": 0.25
+}

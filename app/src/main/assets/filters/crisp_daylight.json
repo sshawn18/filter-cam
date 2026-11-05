@@ -1,0 +1,21 @@
+{
+  "name": "Crisp Daylight",
+  "exposure": 0.05,
+  "temperature": -0.08,
+  "contrast": 1.12,
+  "blackLift": 0.0,
+  "shadowColor": [
+    0.1,
+    0.18,
+    0.3
+  ],
+  "shadowAmount": 0.2,
+  "saturation": 1.1,
+  "cyanShift": 0.15,
+  "skinProtect": 0.8,
+  "sharpness": 0.5,
+  "clarity": 0.4,
+  "highlightRolloff": 0.3,
+  "grain": 0.0,
+  "vignette": 0.1
+}
